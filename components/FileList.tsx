@@ -4,14 +4,13 @@ import { ref, listAll, getDownloadURL, deleteObject, getMetadata, ListResult, St
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { storage } from '../lib/firebase';
 import FileIcon from './FileIcon';
-import { FaDownload, FaTrash, FaFolder, FaFile, FaEllipsisV, FaImage, FaList, FaThLarge, FaInfoCircle } from 'react-icons/fa'; // Thêm icons
-import { useAppStore } from '../store/useAppStore'; // Import store
+import { FaDownload, FaTrash, FaFolder, FaFile, FaEdit, FaEllipsisV, FaImage, FaList, FaThLarge, FaInfoCircle } from 'react-icons/fa'; // Thêm icons
+import { useAppStore, EditingFile } from '../store/useAppStore'; // <-- Import EditingFile type
 import { twMerge } from 'tailwind-merge';
 import { Menu, Transition } from '@headlessui/react'; // Dùng cho menu context
 import { Fragment } from 'react'; // Dùng cho Transition
 import JSZip from 'jszip'; // Cần JSZip để giải nén
 import { saveAs } from 'file-saver'; // Import saveAs từ file-saver
-
 // Định nghĩa kiểu dữ liệu cho file và folder
 interface StorageItem {
   name: string;
@@ -22,6 +21,17 @@ interface StorageItem {
   updated?: Date; // Thời gian cập nhật
 }
 const EXECUTABLE_EXTENSIONS_FOR_UNZIP = ['exe', 'msi', 'bat', 'cmd', 'sh', 'app', 'dmg', 'deb', 'rpm', 'apk'];
+// --- Helper xác định file có thể chỉnh sửa ---
+const EDITABLE_EXTENSIONS = [
+  'txt', 'log', 'md', 'json', 'js', 'jsx', 'ts', 'tsx', 'html', 'htm', 'css', 'scss', 'sass', 'less', 'xml', 'yaml', 'yml', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'php', 'rb', 'swift', 'kt', 'kts', 'sql', 'sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1', 'ini', 'cfg', 'conf', 'env', 'dockerfile', 'gitignore'
+  // Thêm các đuôi file text/code bạn muốn cho phép sửa
+];
+const isEditableFile = (fileName: string): boolean => {
+  if (!fileName || fileName.includes('/')) return false; // Không cho sửa nếu có vẻ là path
+  const extension = fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase();
+  return EDITABLE_EXTENSIONS.includes(extension);
+};
+
 
 interface FileListProps {
   currentPath?: string;
@@ -38,7 +48,7 @@ interface ItemActionsProps {
 const ItemActions: React.FC<ItemActionsProps> = ({ item, onDelete }) => {
   // State để quản lý trạng thái đang xử lý tải/giải nén
   const [isProcessingDownload, setIsProcessingDownload] = useState(false);
-
+  const openEditor = useAppStore((state) => state.openEditorModal); // Lấy hàm mở editor từ store
   // --- Hàm xử lý tải xuống và giải nén tự động ---
   const handleDownload = async () => {
     if (!item || !item.url || item.isFolder) return; // Kiểm tra cơ bản
@@ -115,10 +125,26 @@ const ItemActions: React.FC<ItemActionsProps> = ({ item, onDelete }) => {
     }
   };
   // --- Kết thúc hàm xử lý ---
+  // --- Hàm xử lý khi click nút Edit ---
+  const handleEditClick = () => {
+    if (item && item.url && !item.isFolder && isEditableFile(item.name)) {
+      const fileToEdit: EditingFile = {
+        name: item.name,
+        fullPath: item.fullPath,
+        url: item.url // Truyền URL để modal fetch nội dung
+      };
+      openEditor(fileToEdit); // Gọi action trong store
+    } else {
+      console.warn("Cannot edit this file type or file info is missing.");
+      alert("Không thể chỉnh sửa loại file này.");
+    }
+  };
+  // --- Kết thúc hàm xử lý Edit ---
+
 
   // Không render actions cho folder
   if (item.isFolder) return null;
-
+  const canEdit = isEditableFile(item.name);
   return (
     <Menu as="div" className="relative inline-block text-left">
       <div>
@@ -148,7 +174,25 @@ const ItemActions: React.FC<ItemActionsProps> = ({ item, onDelete }) => {
       >
         <Menu.Items className="absolute right-0 mt-2 w-40 origin-top-right divide-y divide-gray-100 dark:divide-zinc-600 rounded-md bg-white dark:bg-zinc-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
           <div className="px-1 py-1 ">
-            {/* Tải xuống (Dùng Button thay vì Link) */}
+            {/* Chỉnh sửa */}
+            {canEdit && ( // Chỉ hiển thị nếu file có thể sửa
+              <Menu.Item disabled={isProcessingDownload}>
+                {({ active, disabled }) => (
+                  <button
+                    onClick={handleEditClick}
+                    disabled={disabled}
+                    className={twMerge(
+                      'group flex rounded-md items-center w-full px-2 py-2 text-sm',
+                      disabled ? 'opacity-50 cursor-not-allowed' : '',
+                      active ? 'bg-blue-500 text-white' : 'text-gray-900 dark:text-gray-100'
+                    )}
+                  >
+                    <FaEdit className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Chỉnh sửa
+                  </button>
+                )}
+              </Menu.Item>
+            )}
             <Menu.Item disabled={isProcessingDownload}>
               {({ active, disabled }) => (
                 <button
@@ -176,6 +220,9 @@ const ItemActions: React.FC<ItemActionsProps> = ({ item, onDelete }) => {
                 </button>
               )}
             </Menu.Item>
+
+
+
             {/* Xem trước (nếu là ảnh) - Giữ nguyên */}
             {item.url && item.name.match(/\.(jpg|jpeg|png|gif|bmp|svg|webp)$/i) && (
               <Menu.Item disabled={isProcessingDownload}>
@@ -217,7 +264,7 @@ const ItemActions: React.FC<ItemActionsProps> = ({ item, onDelete }) => {
           </div>
         </Menu.Items>
       </Transition>
-    </Menu>
+    </Menu >
   );
 }
 

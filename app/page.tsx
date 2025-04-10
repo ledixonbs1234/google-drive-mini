@@ -7,6 +7,7 @@ import FileList from '../components/FileList';
 import Breadcrumbs from '../components/Breadcrumbs';
 import CreateFolderModal from '../components/CreateFolderModal';
 import ImagePreviewModal from '../components/ImagePreviewModal';
+import CodeEditorModal from '../components/CodeEditorModal'; 
 import { useAppStore } from '../store/useAppStore'; // Import store Zustand
 import { FaFolderPlus, FaSearch, FaThLarge, FaList, FaSun, FaMoon } from 'react-icons/fa'; // Thêm icons
 
@@ -20,12 +21,13 @@ export default function Home() {
 
   // Lấy các state và actions từ store Zustand
   const {
-      viewMode, setViewMode,
-      theme, toggleTheme,
-      openCreateFolderModal,
-      isCreateFolderModalOpen, // Lấy thêm để điều khiển modal
-      isImagePreviewModalOpen, // Lấy thêm để điều khiển modal
-   } = useAppStore();
+    viewMode, setViewMode,
+    theme, toggleTheme,
+    openCreateFolderModal,
+    isCreateFolderModalOpen,
+    isImagePreviewModalOpen,
+    isEditorModalOpen, // <-- Lấy state của editor modal
+ } = useAppStore();
 
 
   // Callback để refresh dữ liệu (truyền xuống FileList nếu cần, hoặc FileList tự fetch lại)
@@ -122,13 +124,12 @@ export default function Home() {
 
       {/* Modals (nằm ngoài cấu trúc layout chính để đảm bảo hiển thị đúng) */}
       {isCreateFolderModalOpen && (
-          <CreateFolderModal
-            currentPath={currentPath}
-            onFolderCreated={refreshData}
-          />
+          <CreateFolderModal currentPath={currentPath} onFolderCreated={refreshData} />
       )}
        {isImagePreviewModalOpen && <ImagePreviewModal />}
 
+       {/* Render Code Editor Modal nếu isEditorModalOpen là true */}
+       {isEditorModalOpen && <CodeEditorModal />}
     </main>
   );
 }
