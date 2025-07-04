@@ -32,6 +32,27 @@ const isEditableFile = (fileName: string): boolean => {
   return EDITABLE_EXTENSIONS.includes(extension);
 };
 
+// Helper function để xác định loại file
+const getFileType = (fileName: string): 'pdf' | 'video' | 'audio' | 'markdown' | 'image' | '3d' | 'code' | 'unknown' => {
+  const ext = fileName.toLowerCase().split('.').pop();
+  
+  if (['pdf'].includes(ext || '')) return 'pdf';
+  if (['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'flv', '3gp'].includes(ext || '')) return 'video';
+  if (['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'wma'].includes(ext || '')) return 'audio';
+  if (['md', 'markdown', 'txt'].includes(ext || '')) return 'markdown';
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff'].includes(ext || '')) return 'image';
+  if (['obj', 'stl', 'ply', 'gltf', 'glb', '3ds'].includes(ext || '')) return '3d';
+  if (['json', 'xml', 'csv', 'yaml', 'yml', 'toml', 'ini'].includes(ext || '')) return 'code';
+  
+  return 'unknown';
+};
+
+// Helper để kiểm tra file có thể preview không
+const isPreviewableFile = (fileName: string): boolean => {
+  const fileType = getFileType(fileName);
+  return ['pdf', 'video', 'audio', 'markdown', 'image', '3d', 'code'].includes(fileType);
+};
+
 
 interface FileListProps {
   currentPath?: string;
@@ -281,6 +302,7 @@ export default function FileList({ currentPath = '', onNavigate, searchTerm, ref
   // Lấy state từ store Zustand
   const viewMode = useAppStore((state) => state.viewMode);
   const openImagePreviewModal = useAppStore((state) => state.openImagePreviewModal);
+  const openPreviewModal = useAppStore((state) => state.openPreviewModal);
 
   // Hàm fetch dữ liệu từ Firebase
   const fetchData = useCallback(async () => {
@@ -379,14 +401,24 @@ export default function FileList({ currentPath = '', onNavigate, searchTerm, ref
     onNavigate(newPath); // Gọi callback để chuyển trang/component cha cập nhật state
   };
 
-  // Hàm xử lý click vào ảnh để xem trước
-  const handleImageClick = (item: StorageItem) => {
-    // Chỉ mở preview nếu là file ảnh và có URL
-    const isImage = item.name.match(/\.(jpg|jpeg|png|gif|bmp|svg|webp)$/i);
-    if (!item.isFolder && isImage && item.url) {
+  // Hàm xử lý click vào file để preview
+  const handleFileClick = (item: StorageItem) => {
+    if (item.isFolder || !item.url) return;
+    
+    const fileType = getFileType(item.name);
+    
+    if (fileType === 'image') {
+      // Giữ nguyên image preview modal cho ảnh
       openImagePreviewModal(item.url);
+    } else if (isPreviewableFile(item.name)) {
+      // Sử dụng preview modal mới cho các file khác
+      openPreviewModal({
+        name: item.name,
+        url: item.url,
+        type: fileType
+      });
     }
-    // Nếu là file khác hoặc folder thì không làm gì khi click vào ảnh thumbnail
+    // Nếu không thể preview thì không làm gì
   };
 
 
@@ -466,7 +498,7 @@ export default function FileList({ currentPath = '', onNavigate, searchTerm, ref
             "group relative bg-white dark:bg-zinc-800 rounded-lg shadow hover:shadow-md transition-shadow duration-200 p-3 flex flex-col items-center text-center cursor-pointer",
             item.isFolder ? "hover:bg-blue-50 dark:hover:bg-blue-900/20" : "hover:bg-gray-50 dark:hover:bg-zinc-700"
           )}
-          onClick={() => item.isFolder ? handleFolderClick(item.name) : handleImageClick(item)} // Click folder để vào, click ảnh để preview
+          onClick={() => item.isFolder ? handleFolderClick(item.name) : handleFileClick(item)} // Click folder để vào, click file để preview
           title={item.name} // Hiển thị full name khi hover
         >
           {/* Icon hoặc Thumbnail */}
@@ -490,7 +522,10 @@ export default function FileList({ currentPath = '', onNavigate, searchTerm, ref
           {/* Nút actions (hiện khi hover) - dùng Menu của Headless UI */}
           {!item.isFolder && (
             // Chỉ giữ lại class định vị, xóa opacity và group-hover
-            <div className="absolute top-1 right-1">
+            <div 
+              className="absolute top-1 right-1"
+              onClick={(e) => e.stopPropagation()} // Ngăn chặn event bubbling
+            >
               <ItemActions item={item} onDelete={handleDelete} />
             </div>
           )}
@@ -518,24 +553,26 @@ export default function FileList({ currentPath = '', onNavigate, searchTerm, ref
         </thead>
         <tbody className="bg-white dark:bg-zinc-800/50 divide-y divide-gray-200 dark:divide-zinc-700">
           {sortedItems.map((item) => (
-            <tr key={item.fullPath} className="hover:bg-gray-50 dark:hover:bg-zinc-700/50 group">
+            <tr 
+              key={item.fullPath} 
+              className="hover:bg-gray-50 dark:hover:bg-zinc-700/50 group cursor-pointer"
+              onClick={() => item.isFolder ? handleFolderClick(item.name) : handleFileClick(item)}
+            >
               {/* Icon */}
               <td className="px-4 py-2 whitespace-nowrap">
-                <div className="flex-shrink-0 h-5 w-5" onClick={() => item.isFolder ? handleFolderClick(item.name) : handleImageClick(item)} >
+                <div className="flex-shrink-0 h-5 w-5">
                   {/* Nếu là ảnh, có thể vẫn hiện icon file ảnh thay vì thumbnail nhỏ */}
                   <FileIcon fileName={item.name} isFolder={item.isFolder} className="w-5 h-5" />
                 </div>
               </td>
               {/* Tên */}
               <td className="px-4 py-2 whitespace-nowrap max-w-xs sm:max-w-md md:max-w-lg">
-                <button
-                  onClick={() => item.isFolder ? handleFolderClick(item.name) : {}} // Chỉ folder mới navigate khi click tên
-                  className={`text-sm font-medium truncate ${item.isFolder ? 'text-blue-600 dark:text-blue-400 hover:underline cursor-pointer' : 'text-gray-900 dark:text-gray-100 cursor-default'}`}
+                <span
+                  className={`text-sm font-medium truncate ${item.isFolder ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-gray-100'}`}
                   title={item.name}
-                  disabled={!item.isFolder} // Disable button nếu là file
                 >
                   {item.name}
-                </button>
+                </span>
               </td>
               {/* Ngày sửa đổi */}
               <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 hidden md:table-cell">
@@ -550,7 +587,7 @@ export default function FileList({ currentPath = '', onNavigate, searchTerm, ref
                 {!item.isFolder && (
                    // Xóa class opacity và group-hover khỏi div này (hoặc bỏ hẳn div nếu không cần)
                    // Chỉ cần render ItemActions trực tiếp là đủ
-                  <div> {/* Hoặc bỏ hẳn div này */}
+                  <div onClick={(e) => e.stopPropagation()}> {/* Ngăn chặn event bubbling */}
                      <ItemActions item={item} onDelete={handleDelete} />
                    </div>
                 )}

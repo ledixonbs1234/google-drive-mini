@@ -8,12 +8,24 @@ interface EditingFile {
     fullPath: string;
     url: string; // Cần URL để fetch nội dung ban đầu
 }
+
+interface PreviewFile {
+    name: string;
+    url: string;
+    type: 'pdf' | 'video' | 'audio' | 'markdown' | 'image' | '3d' | 'code' | 'unknown';
+}
+
 interface AppState {
     viewMode: ViewMode;
     theme: Theme;
     isCreateFolderModalOpen: boolean;
     isImagePreviewModalOpen: boolean;
     previewImageUrl: string | null;
+    
+    // New preview modal
+    isPreviewModalOpen: boolean;
+    previewFile: PreviewFile | null;
+    
     setViewMode: (mode: ViewMode) => void;
     toggleTheme: () => void;
     setTheme: (theme: Theme) => void;
@@ -21,6 +33,10 @@ interface AppState {
     closeCreateFolderModal: () => void;
     openImagePreviewModal: (url: string) => void;
     closeImagePreviewModal: () => void;
+
+    // New preview modal actions
+    openPreviewModal: (file: PreviewFile) => void;
+    closePreviewModal: () => void;
 
     // --- State mới cho Editor ---
     isEditorModalOpen: boolean;
@@ -47,6 +63,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     isCreateFolderModalOpen: false,
     isImagePreviewModalOpen: false,
     previewImageUrl: null,
+    isPreviewModalOpen: false,
+    previewFile: null,
     isEditorModalOpen: false,
     editingFile: null,
     // Các hàm cập nhật state
@@ -66,10 +84,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     closeCreateFolderModal: () => set({ isCreateFolderModalOpen: false }),
     openImagePreviewModal: (url) => set({ isImagePreviewModalOpen: true, previewImageUrl: url }),
     closeImagePreviewModal: () => set({ isImagePreviewModalOpen: false, previewImageUrl: null }),
+    openPreviewModal: (file) => set({ isPreviewModalOpen: true, previewFile: file }),
+    closePreviewModal: () => set({ isPreviewModalOpen: false, previewFile: null }),
     // --- Hàm mới cho Editor ---
     openEditorModal: (file) => set({ editingFile: file, isEditorModalOpen: true }),
     // Reset file đang sửa khi đóng modal
     closeEditorModal: () => set({ isEditorModalOpen: false, editingFile: null }),
 }));
 // Export lại kiểu EditingFile nếu cần dùng ở nơi khác
-export type { EditingFile };
+export type { EditingFile, PreviewFile };

@@ -2,11 +2,13 @@
 'use client'; // Cần thiết vì sử dụng hooks (useState, useEffect) và Zustand
 
 import { useState, useEffect, useCallback } from 'react';
-import FileUploader from '../components/FileUploader';
+import EnhancedFileUploader from '../components/EnhancedFileUploader';
+import AdvancedSearch from '../components/AdvancedSearch';
 import FileList from '../components/FileList';
 import Breadcrumbs from '../components/Breadcrumbs';
 import CreateFolderModal from '../components/CreateFolderModal';
 import ImagePreviewModal from '../components/ImagePreviewModal';
+import PreviewModal from '../components/PreviewModal';
 import CodeEditorModal from '../components/CodeEditorModal'; 
 import StorageIndicator from '../components/StorageIndicator'; // Chỉ giữ StorageIndicator
 import { useAppStore } from '../store/useAppStore'; // Import store Zustand
@@ -28,8 +30,11 @@ export default function Home() {
     viewMode, setViewMode,
     theme, toggleTheme,
     openCreateFolderModal,
+    openImagePreviewModal,
+    openPreviewModal,
     isCreateFolderModalOpen,
     isImagePreviewModalOpen,
+    isPreviewModalOpen,
     isEditorModalOpen, // <-- Lấy state của editor modal
  } = useAppStore();
 
@@ -74,15 +79,29 @@ export default function Home() {
 
           {/* Thanh công cụ: Search, View, Theme, Create */}
           <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Search Bar */}
-            <div className="relative">
-              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Tìm kiếm..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-3 py-1.5 w-36 sm:w-48 border border-gray-300 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-zinc-700 text-sm"
+            {/* Advanced Search */}
+            <div className="flex-1 max-w-md">
+              <AdvancedSearch
+                onResultSelect={(result) => {
+                  // Handle file selection for preview
+                  if (!result.isFolder && result.url) {
+                    // Determine file type and open appropriate preview
+                    const fileType = result.type || 'unknown';
+                    if (fileType === 'image') {
+                      openImagePreviewModal(result.url);
+                    } else {
+                      openPreviewModal({
+                        name: result.name,
+                        url: result.url,
+                        type: fileType as any
+                      });
+                    }
+                  }
+                }}
+                onNavigate={(path) => {
+                  // Handle navigation to folder
+                  setCurrentPath(path);
+                }}
               />
             </div>
 
@@ -122,7 +141,7 @@ export default function Home() {
            <Breadcrumbs currentPath={currentPath} onNavigate={handleNavigate} />
 
           {/* File Uploader */}
-          <FileUploader currentPath={currentPath} onUploadComplete={refreshData} />
+          <EnhancedFileUploader currentPath={currentPath} onUploadComplete={refreshData} />
 
           {/* File List */}
           <FileList
@@ -142,6 +161,7 @@ export default function Home() {
           <CreateFolderModal currentPath={currentPath} onFolderCreated={refreshData} />
       )}
        {isImagePreviewModalOpen && <ImagePreviewModal />}
+       {isPreviewModalOpen && <PreviewModal />}
 
        {/* Render Code Editor Modal nếu isEditorModalOpen là true */}
        {isEditorModalOpen && <CodeEditorModal />}
