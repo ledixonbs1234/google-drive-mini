@@ -49,14 +49,14 @@ const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
 
   // Don't render until mounted to prevent hydration issues
   if (!isMounted) {
-    return <div className={`w-full h-screen ${className}`}>{children}</div>;
+    return <div className={`w-full min-h-screen bg-gray-50 dark:bg-zinc-900 ${className}`}>{children}</div>;
   }
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   if (isMobile) {
     return (
-      <div className={`w-full h-screen flex flex-col ${className}`}>
+      <div className={`w-full min-h-screen flex flex-col bg-gray-50 dark:bg-zinc-900 ${className}`}>
         {/* Mobile Header */}
         <div className="flex items-center justify-between p-4 bg-white dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 relative z-50">
           <div className="flex items-center space-x-3">
@@ -94,7 +94,7 @@ const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
                   <FaTimes className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-4 overflow-y-auto">
+              <div className="p-4">
                 {sidebar}
               </div>
             </div>
@@ -102,7 +102,7 @@ const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
         )}
 
         {/* Main Content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 bg-gray-50 dark:bg-zinc-900">
           {children}
         </div>
       </div>
@@ -111,10 +111,10 @@ const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
 
   // Desktop/Tablet layout
   return (
-    <div className={`w-full h-screen flex ${className}`}>
+    <div className={`w-full h-screen flex bg-gray-50 dark:bg-zinc-900 ${className}`}>
       {/* Sidebar */}
       {sidebar && (
-        <div className="w-64 bg-white dark:bg-zinc-800 border-r border-gray-200 dark:border-zinc-700 overflow-y-auto">
+        <div className="w-64 bg-white dark:bg-zinc-800 border-r border-gray-200 dark:border-zinc-700">
           <div className="p-4">
             {sidebar}
           </div>
@@ -122,7 +122,7 @@ const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
       )}
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 bg-gray-50 dark:bg-zinc-900">
         {children}
       </div>
     </div>

@@ -18,7 +18,29 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" suppressHydrationWarning>
-      <body className={`${inter.className} bg-gray-100 dark:bg-zinc-900 transition-colors duration-300`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('theme');
+                  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                  
+                  if (theme === 'dark' || (!theme && prefersDark)) {
+                    document.documentElement.classList.add('dark');
+                  } else {
+                    document.documentElement.classList.remove('dark');
+                  }
+                } catch (e) {
+                  console.error('Theme initialization error:', e);
+                }
+              })();
+            `,
+          }}
+        />
+      </head>
+      <body className={`${inter.className} min-h-screen transition-colors duration-300`}>
         <ThemeProvider>
            {children}
         </ThemeProvider>

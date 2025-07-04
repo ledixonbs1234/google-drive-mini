@@ -1,19 +1,21 @@
 @import "tailwindcss";
 
+/* Tailwind CSS v4 với dark mode manual */
+@variant dark (.dark &);
+
+/* Custom CSS Variables */
 :root {
   --background: #ffffff;
   --foreground: #171717;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
@@ -23,4 +25,32 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Force dark mode styles */
+.dark {
+  color-scheme: dark;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Override any conflicting styles */
+html.dark,
+html.dark body {
+  background-color: #0a0a0a !important;
+  color: #ededed !important;
+}
+
+/* Debug CSS - Tạm thời */
+.debug-dark-test {
+  background-color: white;
+  color: black;
+}
+
+.dark .debug-dark-test {
+  background-color: #1f2937 !important;
+  color: white !important;
 }

@@ -52,7 +52,7 @@ const updateThemeDOM = (theme: Theme) => {
         } else {
             root.classList.remove('dark');
         }
-        localStorage.setItem('theme', theme); // Lưu lựa chọn
+        localStorage.setItem('theme', theme);
     }
 };
 
@@ -70,15 +70,51 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Các hàm cập nhật state
     setViewMode: (mode) => set({ viewMode: mode }),
     toggleTheme: () => {
-        const newTheme = get().theme === 'light' ? 'dark' : 'light';
+        const current = get();
+        const newTheme = current.theme === 'light' ? 'dark' : 'light';
+        console.log('🎨 Toggle theme:', current.theme, '->', newTheme);
+        
+        // Cập nhật state trước
         set({ theme: newTheme });
-        // Lưu theme vào localStorage để ghi nhớ lựa chọn
-        updateThemeDOM(newTheme); // Gọi hàm cập nhật DOM
+        
+        // Force update DOM ngay lập tức
+        if (typeof window !== 'undefined') {
+            const root = document.documentElement;
+            console.log('🎨 Force updating DOM classes...');
+            
+            // Remove all theme classes first
+            root.classList.remove('dark', 'light');
+            
+            // Add new theme class
+            root.classList.add(newTheme);
+            
+            console.log('🎨 DOM classes after toggle:', root.classList.toString());
+            
+            // Save to localStorage
+            localStorage.setItem('theme', newTheme);
+        }
     },
     // Hàm set theme, dùng khi khởi tạo app từ localStorage
     setTheme: (theme) => {
+        console.log('🎨 SetTheme called with:', theme);
         set({ theme });
-        updateThemeDOM(theme); // Gọi hàm cập nhật DOM
+        
+        // Force update DOM ngay lập tức
+        if (typeof window !== 'undefined') {
+            const root = document.documentElement;
+            console.log('🎨 Force updating DOM classes with setTheme...');
+            
+            // Remove all theme classes first
+            root.classList.remove('dark', 'light');
+            
+            // Add new theme class
+            root.classList.add(theme);
+            
+            console.log('🎨 DOM classes after setTheme:', root.classList.toString());
+            
+            // Save to localStorage
+            localStorage.setItem('theme', theme);
+        }
     },
     openCreateFolderModal: () => set({ isCreateFolderModalOpen: true }),
     closeCreateFolderModal: () => set({ isCreateFolderModalOpen: false }),
