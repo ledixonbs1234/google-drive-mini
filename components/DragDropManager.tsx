@@ -54,75 +54,57 @@ const DragDropManager: React.FC<DragDropManagerProps> = ({
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging, onDragEnd]);
-
   if (!isVisible) return null;
 
+  // Only show a small drag preview following the cursor, no overlay
   return (
-    <>
-      {/* Drag Preview */}
-      <div
-        ref={dragRef}
-        className={twMerge(
-          'fixed z-50 pointer-events-none',
-          'bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700',
-          'rounded-lg shadow-lg p-3 min-w-[200px] max-w-[300px]',
-          className
-        )}
-        style={{
-          left: dragPosition.x + 10,
-          top: dragPosition.y + 10,
-          transform: 'translate(0, 0)'
-        }}
-      >
-        <div className="flex items-center space-x-2 mb-2">
-          <div className="text-blue-600 dark:text-blue-400">
-            {draggedItems.length === 1 ? (
-              draggedItems[0].isFolder ? <FaFolder className="w-4 h-4" /> : <FaFile className="w-4 h-4" />
-            ) : (
-              <div className="flex -space-x-1">
-                <FaFolder className="w-4 h-4" />
-                <FaFile className="w-4 h-4" />
-              </div>
-            )}
-          </div>
-          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-            {draggedItems.length === 1 ? draggedItems[0].name : `${draggedItems.length} mục`}
-          </span>
+    <div
+      ref={dragRef}
+      className={twMerge(
+        'fixed z-50 pointer-events-none select-none',
+        'bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700',
+        'rounded-lg shadow-lg p-2 min-w-[120px] max-w-[220px]',
+        className
+      )}
+      style={{
+        left: dragPosition.x + 12,
+        top: dragPosition.y + 12,
+        transform: 'translate(0, 0)',
+        pointerEvents: 'none',
+        opacity: 0.95
+      }}
+    >
+      <div className="flex items-center space-x-2">
+        <div className="text-blue-600 dark:text-blue-400">
+          {draggedItems.length === 1 ? (
+            draggedItems[0].isFolder ? <FaFolder className="w-4 h-4" /> : <FaFile className="w-4 h-4" />
+          ) : (
+            <div className="flex -space-x-1">
+              <FaFolder className="w-4 h-4" />
+              <FaFile className="w-4 h-4" />
+            </div>
+          )}
         </div>
-        
-        {draggedItems.length > 1 && (
-          <div className="text-xs text-gray-600 dark:text-gray-400">
-            {draggedItems.slice(0, 3).map((item, index) => (
-              <div key={index} className="truncate">
-                {item.name}
-              </div>
-            ))}
-            {draggedItems.length > 3 && (
-              <div className="text-gray-500">
-                +{draggedItems.length - 3} mục khác
-              </div>
-            )}
-          </div>
-        )}
+        <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+          {draggedItems.length === 1 ? draggedItems[0].name : `${draggedItems.length} mục`}
+        </span>
       </div>
-
-      {/* Drop Zones Overlay */}
-      <div className="fixed inset-0 z-40 pointer-events-none">
-        <div className="absolute inset-0 bg-black bg-opacity-10" />
-        <div className="absolute inset-4 border-2 border-dashed border-blue-500 rounded-lg bg-blue-50 dark:bg-blue-900 bg-opacity-50 flex items-center justify-center">
-          <div className="text-center">
-            <FaArrowRight className="w-8 h-8 text-blue-600 dark:text-blue-400 mx-auto mb-2" />
-            <p className="text-lg font-medium text-blue-800 dark:text-blue-200">
-              Kéo và thả vào thư mục đích
-            </p>
-            <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-              Hoặc nhấn ESC để hủy
-            </p>
-          </div>
+      {draggedItems.length > 1 && (
+        <div className="text-[10px] text-gray-600 dark:text-gray-400 mt-1">
+          {draggedItems.slice(0, 2).map((item, index) => (
+            <div key={index} className="truncate">
+              {item.name}
+            </div>
+          ))}
+          {draggedItems.length > 2 && (
+            <div className="text-gray-500">
+              +{draggedItems.length - 2} mục khác
+            </div>
+          )}
         </div>
-      </div>
-    </>
+      )}
+    </div>
   );
-};
+}
 
 export default DragDropManager;

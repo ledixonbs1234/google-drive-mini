@@ -60,6 +60,8 @@ interface FileListProps {
   // onUploadComplete?: () => void; // Không cần nữa nếu dùng refreshKey
   searchTerm: string;
   refreshKey: number; // --- Thêm prop refreshKey ---
+  onDragStart: (items: StorageItem[]) => void; // Thêm prop onDragStart
+  onDrop: (targetPath: string) => void; // Thêm prop onDrop
 }
 interface ItemActionsProps {
   item: StorageItem;
@@ -294,7 +296,7 @@ const ItemActions: React.FC<ItemActionsProps> = ({ item, onDelete }) => {
   );
 }
 
-export default function FileList({ currentPath = '', onNavigate, searchTerm, refreshKey }: FileListProps) {
+export default function FileList({ currentPath = '', onNavigate, searchTerm, refreshKey, onDragStart, onDrop }: FileListProps) {
   const [items, setItems] = useState<StorageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -494,11 +496,41 @@ export default function FileList({ currentPath = '', onNavigate, searchTerm, ref
       {sortedItems.map((item) => (
         <div
           key={item.fullPath}
+          draggable={!item.isFolder} // Chỉ cho phép kéo file
+          onDragStart={(e) => {
+            // Ngăn chặn hành vi mặc định có thể gây xung đột
+            e.stopPropagation(); 
+            // Bắt đầu kéo một mục
+            onDragStart([item]);
+          }}
           className={twMerge(
             "group relative bg-white dark:bg-zinc-800 rounded-lg shadow hover:shadow-md transition-shadow duration-200 p-3 flex flex-col items-center text-center cursor-pointer",
             item.isFolder ? "hover:bg-blue-50 dark:hover:bg-blue-900/20" : "hover:bg-gray-50 dark:hover:bg-zinc-700"
           )}
           onClick={() => item.isFolder ? handleFolderClick(item.name) : handleFileClick(item)} // Click folder để vào, click file để preview
+          onDragOver={(e) => {
+            if (item.isFolder) {
+              e.preventDefault(); // Cho phép thả vào thư mục
+              // Thêm hiệu ứng visual (ví dụ: đổi màu border)
+              e.currentTarget.classList.add('ring-2', 'ring-blue-500');
+            }
+          }}
+          onDragLeave={(e) => {
+            if (item.isFolder) {
+              // Xóa hiệu ứng visual khi kéo ra ngoài
+              e.currentTarget.classList.remove('ring-2', 'ring-blue-500');
+            }
+          }}
+          onDrop={(e) => {
+            if (item.isFolder) {
+              e.preventDefault();
+              e.stopPropagation();
+              // Xóa hiệu ứng visual
+              e.currentTarget.classList.remove('ring-2', 'ring-blue-500');
+              // Gọi hàm onDrop từ props
+              onDrop(item.fullPath);
+            }
+          }}
           title={item.name} // Hiển thị full name khi hover
         >
           {/* Icon hoặc Thumbnail */}
@@ -555,8 +587,32 @@ export default function FileList({ currentPath = '', onNavigate, searchTerm, ref
           {sortedItems.map((item) => (
             <tr 
               key={item.fullPath} 
+              draggable={!item.isFolder} // Chỉ cho phép kéo file
+              onDragStart={(e) => {
+                e.stopPropagation();
+                onDragStart([item]);
+              }}
               className="hover:bg-gray-50 dark:hover:bg-zinc-700/50 group cursor-pointer"
               onClick={() => item.isFolder ? handleFolderClick(item.name) : handleFileClick(item)}
+              onDragOver={(e) => {
+                if (item.isFolder) {
+                  e.preventDefault();
+                  e.currentTarget.classList.add('bg-blue-100', 'dark:bg-blue-900');
+                }
+              }}
+              onDragLeave={(e) => {
+                if (item.isFolder) {
+                  e.currentTarget.classList.remove('bg-blue-100', 'dark:bg-blue-900');
+                }
+              }}
+              onDrop={(e) => {
+                if (item.isFolder) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.classList.remove('bg-blue-100', 'dark:bg-blue-900');
+                  onDrop(item.fullPath);
+                }
+              }}
             >
               {/* Icon */}
               <td className="px-4 py-2 whitespace-nowrap">

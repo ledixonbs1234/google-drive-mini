@@ -20,6 +20,8 @@ import SettingsModal from '../components/SettingsModal';
 import { useAppStore } from '../store/useAppStore'; // Import store Zustand
 import { FaFolderPlus, FaThLarge, FaList, FaSun, FaMoon, FaEye, FaDownload, FaTrash, FaEdit, FaCopy, FaCut, FaInfo, FaCog } from 'react-icons/fa'; // Thêm icons
 import SharedNotepad from '@/components/SharedNotepad';
+import { storage } from '@/lib/firebase'; // Import storage
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Import storage functions
 
 export default function Home() {
   // State quản lý đường dẫn thư mục hiện tại
@@ -109,10 +111,89 @@ export default function Home() {
     setDraggedItems([]);
   };
 
-  const handleDrop = (targetPath: string) => {
-    console.log('Drop items:', draggedItems, 'to:', targetPath);
-    // Implement actual drop logic here
+  const handleDrop = async (targetPath: string) => {
+    if (!draggedItems || draggedItems.length === 0) {
+      handleDragEnd();
+      return;
+    }
+
+    console.log('Attempting to drop items:', draggedItems, 'into:', targetPath);
+
+    // Lọc ra những item không được phép di chuyển vào chính nó hoặc thư mục con của nó
+    const itemsToMove = draggedItems.filter(item => 
+        !item.isFolder || !targetPath.startsWith(item.fullPath)
+    );
+
+    if (itemsToMove.length !== draggedItems.length) {
+        alert("Không thể di chuyển thư mục vào chính nó hoặc thư mục con của nó.");
+    }
+
+    if (itemsToMove.length === 0) {
+        handleDragEnd();
+        return;
+    }
+
+    // Hiển thị loading hoặc thông báo
+    // (Bạn có thể thêm state để quản lý trạng thái di chuyển)
+
+    for (const item of itemsToMove) {
+      // Bỏ qua folder (không fetch/copy folder qua client)
+      if (item.isFolder) {
+        // TODO: Nếu muốn hỗ trợ di chuyển folder, cần xử lý server-side hoặc Cloud Function
+        continue;
+      }
+      if (!item.url) {
+        alert(`Không tìm thấy URL cho file ${item.name}.`);
+        continue;
+      }
+      try {
+        const originalPath = item.fullPath;
+        const newPath = `${targetPath}${item.name}`;
+
+        // Bỏ qua nếu kéo vào cùng một thư mục
+        const originalParentPath = originalPath.substring(0, originalPath.lastIndexOf('/') + 1);
+        const targetParentPath = targetPath.endsWith('/') ? targetPath : `${targetPath}/`;
+        if (`uploads/${originalParentPath}` === `uploads/${targetParentPath}`) {
+            console.log(`Skipping move for ${item.name} as it's already in the target directory.`);
+            continue;
+        }
+
+        console.log(`Moving ${originalPath} to ${newPath}`);
+
+        // 1. Lấy dữ liệu file gốc dưới dạng Blob
+        let blob: Blob;
+        try {
+          const response = await fetch(item.url);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          blob = await response.blob();
+        } catch (fetchErr) {
+          console.error(`Không thể tải file ${item.name} từ URL:`, fetchErr);
+          alert(`Không thể tải file ${item.name} từ URL. Có thể file đã hết hạn hoặc không còn tồn tại.`);
+          continue;
+        }
+
+        // 2. Upload blob lên vị trí mới
+        const newFileRef = ref(storage, newPath);
+        await uploadBytes(newFileRef, blob);
+
+        // 3. Xóa file gốc
+        const oldFileRef = ref(storage, originalPath);
+        await deleteObject(oldFileRef);
+
+        console.log(`Successfully moved ${item.name}`);
+
+      } catch (error) {
+        console.error(`Failed to move ${item.name}:`, error);
+        alert(`Đã xảy ra lỗi khi di chuyển file ${item.name}. Vui lòng thử lại.`);
+        // Dừng lại nếu có lỗi để tránh mất dữ liệu
+        break;
+      }
+    }
+
+    // Kết thúc và dọn dẹp
     handleDragEnd();
+    // Refresh lại danh sách file
+    refreshData();
   };
 
   // Xử lý context menu
@@ -242,6 +323,8 @@ export default function Home() {
               // onUploadComplete không cần thiết ở đây nữa vì page xử lý refresh
               searchTerm={searchTerm}
               refreshKey={refreshKey} // --- Thêm prop refreshKey ---
+              onDragStart={handleDragStart} // <-- Thêm prop onDragStart
+              onDrop={handleDrop} // <-- Thêm prop onDrop
             />
             <SharedNotepad />
           </div>
