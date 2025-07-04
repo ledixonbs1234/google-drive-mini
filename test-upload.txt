@@ -1,0 +1,9 @@
+Đây là một file test để kiểm tra chức năng upload và hiển thị dung lượng còn lại trên Firebase Storage.
+
+File này sẽ giúp kiểm tra:
+1. Hiển thị thông tin dung lượng còn lại trước khi upload
+2. Validation kiểm tra dung lượng trước khi upload
+3. Cập nhật realtime thông tin storage sau khi upload
+4. Cảnh báo khi dung lượng thấp
+
+Nội dung này được tạo để có kích thước vừa phải cho việc test.

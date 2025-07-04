@@ -3,11 +3,13 @@
 
 import { useDropzone } from 'react-dropzone';
 import { ref, uploadBytesResumable, UploadTaskSnapshot } from 'firebase/storage';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { storage } from '../lib/firebase';
-import { FaUpload } from 'react-icons/fa';
+import { FaUpload, FaInfoCircle } from 'react-icons/fa';
 import { twMerge } from 'tailwind-merge';
 import JSZip from 'jszip'; // <--- Import JSZip
+import { useFileUploadValidation } from '../hooks/useFileUploadValidation'; // Import validation hook
+import { useStorageQuota } from '../hooks/useStorageQuota'; // Import storage hook
 
 interface FileUploaderProps {
   currentPath?: string;
@@ -23,6 +25,29 @@ const ARCHIVE_EXTENSIONS = ['zip', 'rar', '7z', 'tar', 'gz'];
 export default function FileUploader({ currentPath = '', onUploadComplete }: FileUploaderProps) {
   // Giữ state cho từng file riêng biệt, bao gồm cả trạng thái "đang nén"
   const [uploadingFiles, setUploadingFiles] = useState<{ id: string; name: string; progress: number; status: 'pending' | 'zipping' | 'uploading' | 'error' | 'done' }[]>([]);
+  
+  // Add validation hook
+  const { validateFileUpload } = useFileUploadValidation();
+  
+  // Add storage quota hook
+  const { storageInfo, refreshStorageQuota } = useStorageQuota();
+
+  // Load storage quota chỉ khi cần thiết (không blocking)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      refreshStorageQuota();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [refreshStorageQuota]);
+
+  // Format bytes function
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
 
   // --- Hàm helper để nén file ---
   const zipFile = async (file: File): Promise<File> => {
@@ -47,6 +72,24 @@ export default function FileUploader({ currentPath = '', onUploadComplete }: Fil
 
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    // Kiểm tra dung lượng trước khi upload
+    if (storageInfo) {
+      const totalFileSize = acceptedFiles.reduce((sum, file) => sum + file.size, 0);
+      
+      if (totalFileSize > storageInfo.remainingBytes) {
+        alert(`Không đủ dung lượng! Cần ${formatBytes(totalFileSize)} nhưng chỉ còn ${formatBytes(storageInfo.remainingBytes)}.`);
+        return;
+      }
+      
+      // Cảnh báo nếu upload sẽ sử dụng hết >80% dung lượng còn lại
+      if (totalFileSize > storageInfo.remainingBytes * 0.8) {
+        const confirm = window.confirm(
+          `Upload này sẽ sử dụng ${formatBytes(totalFileSize)} (${((totalFileSize / storageInfo.remainingBytes) * 100).toFixed(1)}% dung lượng còn lại). Bạn có muốn tiếp tục?`
+        );
+        if (!confirm) return;
+      }
+    }
+
     // Tạo ID duy nhất và trạng thái ban đầu cho mỗi file
     const initialFilesState = acceptedFiles.map((file, index) => ({
       id: `${Date.now()}-${index}`, // ID đơn giản
@@ -125,6 +168,10 @@ export default function FileUploader({ currentPath = '', onUploadComplete }: Fil
       // Chờ tất cả các file xử lý (nén + upload) xong
       await Promise.all(uploadPromises);
       console.log("Tất cả file đã được xử lý.");
+      
+      // Refresh storage quota sau khi upload hoàn tất
+      await refreshStorageQuota();
+      
       // Gọi callback khi tất cả xong (có thể giữ lại các file đã xong/lỗi để hiển thị)
       onUploadComplete?.();
       // Tùy chọn: Xóa danh sách file sau một thời gian hoặc khi người dùng bắt đầu upload mới
@@ -135,7 +182,7 @@ export default function FileUploader({ currentPath = '', onUploadComplete }: Fil
       // Không cần làm gì thêm vì trạng thái lỗi đã được set cho từng file
     }
 
-  }, [currentPath, onUploadComplete]);
+  }, [currentPath, onUploadComplete, storageInfo, formatBytes, refreshStorageQuota]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -177,6 +224,17 @@ export default function FileUploader({ currentPath = '', onUploadComplete }: Fil
               ? "Đang xử lý file..."
               : "Kéo & thả file hoặc click để chọn"}
           </p>
+        )}
+        {/* Hiển thị thông tin storage compact */}
+        {storageInfo && (
+          <div className="mt-3 flex items-center justify-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
+            <span>Còn lại: <strong className="text-blue-600 dark:text-blue-400">{formatBytes(storageInfo.remainingBytes)}</strong></span>
+            <span>|</span>
+            <span>Đã dùng: {storageInfo.percentUsed.toFixed(1)}%</span>
+            {storageInfo.remainingBytes < 100 * 1024 * 1024 && (
+              <span className="text-amber-600 dark:text-amber-400">⚠️ Dung lượng thấp</span>
+            )}
+          </div>
         )}
       </div>
 

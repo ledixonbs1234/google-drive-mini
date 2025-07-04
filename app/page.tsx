@@ -8,6 +8,7 @@ import Breadcrumbs from '../components/Breadcrumbs';
 import CreateFolderModal from '../components/CreateFolderModal';
 import ImagePreviewModal from '../components/ImagePreviewModal';
 import CodeEditorModal from '../components/CodeEditorModal'; 
+import StorageIndicator from '../components/StorageIndicator'; // Chỉ giữ StorageIndicator
 import { useAppStore } from '../store/useAppStore'; // Import store Zustand
 import { FaFolderPlus, FaSearch, FaThLarge, FaList, FaSun, FaMoon } from 'react-icons/fa'; // Thêm icons
 import SharedNotepad from '@/components/SharedNotepad';
@@ -19,6 +20,8 @@ export default function Home() {
   const [refreshKey, setRefreshKey] = useState(0);
   // State cho việc tìm kiếm
   const [searchTerm, setSearchTerm] = useState('');
+  // State để trigger refresh storage quota
+  const [storageRefreshTrigger, setStorageRefreshTrigger] = useState(0);
 
   // Lấy các state và actions từ store Zustand
   const {
@@ -38,6 +41,8 @@ export default function Home() {
       // Tuy nhiên, cách tốt nhất là FileList tự fetch khi path thay đổi
       console.log("Yêu cầu refresh dữ liệu cho path:", currentPath);
       setRefreshKey(prevKey => prevKey + 1);
+      // Trigger refresh storage quota
+      setStorageRefreshTrigger(prev => prev + 1);
       // Nếu FileList không tự động cập nhật sau khi tạo/xóa, bạn cần cơ chế khác
       // Ví dụ: thêm một state `refreshKey` và thay đổi nó
   };
@@ -55,9 +60,17 @@ export default function Home() {
       <div className="max-w-7xl mx-auto bg-white dark:bg-zinc-800 shadow-lg rounded-xl overflow-hidden">
         {/* Header của ứng dụng */}
         <header className="p-4 border-b border-gray-200 dark:border-zinc-700 flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100">
-            🪟 Drive Mini
-          </h1>
+          <div className="flex items-center space-x-4">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100">
+              🪟 Drive Mini
+            </h1>
+            {/* Storage Indicator compact trong header */}
+            <StorageIndicator 
+              refreshTrigger={storageRefreshTrigger} 
+              compact={true}
+              showLabel={false}
+            />
+          </div>
 
           {/* Thanh công cụ: Search, View, Theme, Create */}
           <div className="flex items-center space-x-2 sm:space-x-3">
