@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getStorage, ref, uploadBytes, StorageReference } from 'firebase/storage';
-
+import { getDatabase } from 'firebase/database'; // <<< THÊM MỚI
 // const firebaseConfig = {
 //   apiKey: "AIzaSyCyOiqe8jyNx7L9usaTGZlopGSOyYL5Gn8",
 //   authDomain: "buudien-f1669.firebaseapp.com",
@@ -18,6 +18,7 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL, // <<< THÊM MỚI
 };
 // Kiểm tra xem các biến môi trường đã được định nghĩa chưa (optional nhưng nên có)
 if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.storageBucket) {
@@ -34,6 +35,7 @@ if (getApps().length === 0) {
 }
 
 const storage = getStorage(app);
+const database = getDatabase(app); // <<< THÊM MỚI
 
 // Hàm tạo thư mục (bằng cách tạo file .keep ẩn)
 const createFolder = async (folderPath: string): Promise<void> => {
@@ -65,4 +67,4 @@ const createFolder = async (folderPath: string): Promise<void> => {
 };
 
 
-export { storage, createFolder };
+export { storage,database, createFolder };

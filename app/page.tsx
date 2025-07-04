@@ -10,6 +10,7 @@ import ImagePreviewModal from '../components/ImagePreviewModal';
 import CodeEditorModal from '../components/CodeEditorModal'; 
 import { useAppStore } from '../store/useAppStore'; // Import store Zustand
 import { FaFolderPlus, FaSearch, FaThLarge, FaList, FaSun, FaMoon } from 'react-icons/fa'; // Thêm icons
+import SharedNotepad from '@/components/SharedNotepad';
 
 export default function Home() {
   // State quản lý đường dẫn thư mục hiện tại
@@ -119,6 +120,7 @@ export default function Home() {
             searchTerm={searchTerm}
             refreshKey={refreshKey} // --- Thêm prop refreshKey ---
           />
+           <SharedNotepad />
         </div>
       </div>
 
