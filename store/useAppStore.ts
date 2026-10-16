@@ -9,6 +9,12 @@ interface EditingFile {
     url: string; // Cần URL để fetch nội dung ban đầu
 }
 
+interface EditingDocxFile {
+    name: string;
+    fullPath: string;
+    url: string; // URL để fetch file .doc/.docx
+}
+
 interface PreviewFile {
     name: string;
     url: string;
@@ -43,6 +49,12 @@ interface AppState {
     editingFile: EditingFile | null; // Thông tin file đang sửa
     openEditorModal: (file: EditingFile) => void;
     closeEditorModal: () => void;
+
+    // --- State mới cho Docx Editor ---
+    isDocxEditorModalOpen: boolean;
+    editingDocxFile: EditingDocxFile | null; // Thông tin file .doc/.docx đang sửa
+    openDocxEditorModal: (file: EditingDocxFile) => void;
+    closeDocxEditorModal: () => void;
 }
 const updateThemeDOM = (theme: Theme) => {
     if (typeof window !== 'undefined') {
@@ -67,6 +79,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     previewFile: null,
     isEditorModalOpen: false,
     editingFile: null,
+    isDocxEditorModalOpen: false,
+    editingDocxFile: null,
     // Các hàm cập nhật state
     setViewMode: (mode) => set({ viewMode: mode }),
     toggleTheme: () => {
@@ -126,6 +140,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     openEditorModal: (file) => set({ editingFile: file, isEditorModalOpen: true }),
     // Reset file đang sửa khi đóng modal
     closeEditorModal: () => set({ isEditorModalOpen: false, editingFile: null }),
+    // --- Hàm mới cho Docx Editor ---
+    openDocxEditorModal: (file) => set({ editingDocxFile: file, isDocxEditorModalOpen: true }),
+    closeDocxEditorModal: () => set({ isDocxEditorModalOpen: false, editingDocxFile: null }),
 }));
 // Export lại kiểu EditingFile nếu cần dùng ở nơi khác
-export type { EditingFile, PreviewFile };
+export type { EditingFile, EditingDocxFile, PreviewFile };

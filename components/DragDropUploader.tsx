@@ -3,9 +3,8 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { FaUpload, FaCloudUploadAlt, FaTimes, FaFile, FaImage, FaFilePdf, FaVideo, FaMusic, FaFileCode, FaFolder, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
-import { uploadBytes, ref, getDownloadURL } from 'firebase/storage';
-import { storage } from '../lib/firebase';
 import { useStorageQuota } from '../hooks/useStorageQuota';
+import { uploadFileToR2 } from '@/lib/storageClient';
 
 interface FileWithPreview {
   file: File;
@@ -31,9 +30,8 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { storageInfo, isLoading, refreshStorageQuota } = useStorageQuota();
+  const { storageInfo, refreshStorageQuota } = useStorageQuota();
 
-  // Drag & Drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -50,21 +48,17 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-
     const droppedFiles = Array.from(e.dataTransfer.files);
     processFiles(droppedFiles);
   }, []);
 
-  // File selection handler
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
     processFiles(selectedFiles);
   }, []);
 
-  // Process files with preview generation
   const processFiles = useCallback(async (fileList: File[]) => {
     const newFiles: FileWithPreview[] = [];
-
     for (const file of fileList) {
       const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
       const fileWithPreview: FileWithPreview = {
@@ -73,7 +67,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
         uploadStatus: 'pending'
       };
 
-      // Generate preview for images
       if (file.type.startsWith('image/')) {
         try {
           const preview = await generateImagePreview(file);
@@ -82,14 +75,11 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
           console.error('Error generating preview:', error);
         }
       }
-
       newFiles.push(fileWithPreview);
     }
-
     setFiles(prev => [...prev, ...newFiles]);
   }, []);
 
-  // Generate image preview
   const generateImagePreview = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -99,16 +89,13 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
     });
   };
 
-  // Remove file from list
   const removeFile = useCallback((id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
   }, []);
 
-  // Upload files
   const uploadFiles = useCallback(async () => {
     if (files.length === 0) return;
 
-    // Check storage quota
     if (storageInfo) {
       const totalSize = files.reduce((sum, f) => sum + f.file.size, 0);
       if (storageInfo.remainingBytes < totalSize) {
@@ -121,61 +108,42 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
 
     const uploadPromises = files.map(async (fileWithPreview) => {
       const { file, id } = fileWithPreview;
-      
       try {
-        // Update status to uploading
         setFiles(prev => prev.map(f => 
           f.id === id ? { ...f, uploadStatus: 'uploading' as const, uploadProgress: 0 } : f
         ));
 
-        const storageRef = ref(storage, `uploads/${currentPath}${file.name}`);
-        
-        // Upload with progress tracking
-        const uploadTask = uploadBytes(storageRef, file);
-        
-        // Simulate progress (Firebase doesn't provide real-time progress for uploadBytes)
-        const progressInterval = setInterval(() => {
+        await uploadFileToR2(file, currentPath, (progress) => {
           setFiles(prev => prev.map(f => 
-            f.id === id ? { 
-              ...f, 
-              uploadProgress: Math.min((f.uploadProgress || 0) + Math.random() * 30, 90) 
-            } : f
+            f.id === id ? { ...f, uploadProgress: progress } : f
           ));
-        }, 200);
+        });
 
-        await uploadTask;
-        clearInterval(progressInterval);
-
-        // Update status to success
         setFiles(prev => prev.map(f => 
           f.id === id ? { ...f, uploadStatus: 'success' as const, uploadProgress: 100 } : f
         ));
-
-      } catch (error) {
+      } catch (error: any) {
         console.error('Upload failed:', error);
         setFiles(prev => prev.map(f => 
           f.id === id ? { 
             ...f, 
             uploadStatus: 'error' as const, 
-            errorMessage: error instanceof Error ? error.message : 'Upload failed'
+            errorMessage: error?.message || 'Upload failed' 
           } : f
         ));
       }
     });
 
     await Promise.all(uploadPromises);
-    
     setIsUploading(false);
     refreshStorageQuota();
     onUploadComplete();
-    
-    // Clear successful uploads after a delay
+
     setTimeout(() => {
       setFiles(prev => prev.filter(f => f.uploadStatus !== 'success'));
     }, 3000);
   }, [files, currentPath, storageInfo, refreshStorageQuota, onUploadComplete]);
 
-  // Get file icon
   const getFileIcon = (file: File) => {
     if (file.type.startsWith('image/')) return <FaImage className="w-6 h-6 text-blue-500" />;
     if (file.type.startsWith('video/')) return <FaVideo className="w-6 h-6 text-red-500" />;
@@ -185,7 +153,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
     return <FaFile className="w-6 h-6 text-gray-500" />;
   };
 
-  // Get status icon
   const getStatusIcon = (status: FileWithPreview['uploadStatus']) => {
     switch (status) {
       case 'success':
@@ -199,7 +166,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
     }
   };
 
-  // Format file size
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -210,7 +176,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
 
   return (
     <div className={`w-full ${className}`}>
-      {/* Drag & Drop Zone */}
       <div
         className={`relative border-2 border-dashed rounded-lg p-8 transition-all duration-200 ${
           isDragging
@@ -243,13 +208,12 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
           
           {storageInfo && (
             <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-              Dung lượng còn lại: {formatFileSize(storageInfo.remainingBytes)}
+              Dung lượng còn lại: {formatFileSize(storageInfo.remainingBytes)} / 10 GB
             </div>
           )}
         </div>
       </div>
 
-      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -258,7 +222,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
         onChange={handleFileSelect}
       />
 
-      {/* File List */}
       {files.length > 0 && (
         <div className="mt-6 space-y-3">
           <div className="flex items-center justify-between">
@@ -283,7 +246,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
                 key={fileWithPreview.id}
                 className="flex items-center space-x-4 p-3 bg-gray-50 dark:bg-zinc-800 rounded-lg"
               >
-                {/* File Icon/Preview */}
                 <div className="flex-shrink-0">
                   {fileWithPreview.preview ? (
                     <img
@@ -298,7 +260,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
                   )}
                 </div>
 
-                {/* File Info */}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                     {fileWithPreview.file.name}
@@ -307,7 +268,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
                     {formatFileSize(fileWithPreview.file.size)}
                   </p>
                   
-                  {/* Progress Bar */}
                   {fileWithPreview.uploadStatus === 'uploading' && (
                     <div className="mt-2 w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2">
                       <div
@@ -317,7 +277,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
                     </div>
                   )}
                   
-                  {/* Error Message */}
                   {fileWithPreview.uploadStatus === 'error' && (
                     <p className="text-xs text-red-500 mt-1">
                       {fileWithPreview.errorMessage}
@@ -325,7 +284,6 @@ const DragDropUploader: React.FC<DragDropUploaderProps> = ({
                   )}
                 </div>
 
-                {/* Status & Actions */}
                 <div className="flex items-center space-x-2">
                   {getStatusIcon(fileWithPreview.uploadStatus)}
                   

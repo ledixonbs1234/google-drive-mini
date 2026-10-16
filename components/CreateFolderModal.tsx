@@ -1,21 +1,23 @@
 // components/CreateFolderModal.tsx
 'use client';
+
 import { useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { FaFolderPlus, FaTimes } from 'react-icons/fa';
 import { useAppStore } from '../store/useAppStore';
-import { storage, createFolder } from '../lib/firebase'; // Import hàm createFolder
+import { createStorageFolder } from '@/lib/storageClient';
 
 interface CreateFolderModalProps {
-  currentPath: string; // Đường dẫn thư mục hiện tại để tạo thư mục con
-  onFolderCreated: () => void; // Callback để load lại danh sách
+  currentPath: string;
+  onFolderCreated: () => void;
 }
 
 const CreateFolderModal: React.FC<CreateFolderModalProps> = ({ currentPath, onFolderCreated }) => {
   const [folderName, setFolderName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const isOpen = useAppStore((state) => state.isCreateFolderModalOpen);
   const closeModal = useAppStore((state) => state.closeCreateFolderModal);
 
@@ -24,28 +26,26 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({ currentPath, onFo
       setError('Tên thư mục không được để trống.');
       return;
     }
-    // Validate tên thư mục (tránh các ký tự không hợp lệ như / \ : * ? " < > |)
+
     const invalidChars = /[\\/:\*\?"<>\|]/;
     if (invalidChars.test(folderName)) {
-        setError('Tên thư mục chứa ký tự không hợp lệ.');
-        return;
+      setError('Tên thư mục chứa ký tự không hợp lệ.');
+      return;
     }
 
     setIsLoading(true);
     setError(null);
 
-    // Đường dẫn đầy đủ đến thư mục mới trong Firebase Storage
-    // Ví dụ: currentPath = "folderA/", folderName = "newFolder" => newFolderPath = "uploads/folderA/newFolder/"
-    const fullPath = `uploads/${currentPath}${folderName.trim()}/`;
-
+    // Chuẩn hóa folder path: uploads/folderA/newFolder/
+    const targetPath = `${currentPath}${folderName.trim()}/`;
 
     try {
-      await createFolder(fullPath); // Gọi hàm tạo thư mục từ firebase.ts
-      onFolderCreated(); // Gọi callback để refresh danh sách
+      await createStorageFolder(targetPath);
+      onFolderCreated();
       closeModalAndReset();
-    } catch (err) {
-      console.error("Lỗi tạo thư mục:", err);
-      setError('Tạo thư mục thất bại. Vui lòng thử lại.');
+    } catch (err: any) {
+      console.error("Lỗi tạo thư mục trên Cloudflare R2:", err);
+      setError(err.message || 'Tạo thư mục thất bại. Vui lòng thử lại.');
     } finally {
       setIsLoading(false);
     }
@@ -61,7 +61,6 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({ currentPath, onFo
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-10" onClose={closeModalAndReset}>
-        {/* Backdrop */}
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -92,20 +91,21 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({ currentPath, onFo
                 >
                   <span><FaFolderPlus className="inline mr-2 mb-1"/>Tạo thư mục mới</span>
                   <button onClick={closeModalAndReset} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                      <FaTimes />
+                    <FaTimes />
                   </button>
                 </Dialog.Title>
+
                 <div className="mt-4">
                   <input
                     type="text"
                     value={folderName}
                     onChange={(e) => {
-                        setFolderName(e.target.value);
-                        if (error) setError(null); // Xóa lỗi khi người dùng gõ
+                      setFolderName(e.target.value);
+                      if (error) setError(null);
                     }}
                     placeholder="Nhập tên thư mục..."
                     className="w-full px-3 py-2 border border-gray-300 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-gray-100"
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }} // Cho phép nhấn Enter để tạo
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
                   />
                   {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
                 </div>
@@ -119,7 +119,7 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({ currentPath, onFo
                   >
                     Hủy
                   </button>
-                   <button
+                  <button
                     type="button"
                     className="inline-flex justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={handleCreate}

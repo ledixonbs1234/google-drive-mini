@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getStorage, ref, uploadBytes, StorageReference } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, listAll, deleteObject, StorageReference } from 'firebase/storage';
 import { getDatabase } from 'firebase/database'; // <<< THÊM MỚI
 // const firebaseConfig = {
 //   apiKey: "AIzaSyCyOiqe8jyNx7L9usaTGZlopGSOyYL5Gn8",
@@ -68,3 +68,27 @@ const createFolder = async (folderPath: string): Promise<void> => {
 
 
 export { storage,database, createFolder };
+
+// Recursive delete of a "folder" (Storage has no real folders — this deletes all objects under the prefix)
+const deleteFolder = async (folderFullPath: string): Promise<void> => {
+  // Ensure folder path ends with '/'
+  const path = folderFullPath.endsWith('/') ? folderFullPath : `${folderFullPath}/`;
+  const folderRef = ref(storage, path);
+  try {
+    const res = await listAll(folderRef);
+
+    // Delete all files in this prefix
+    const deleteFiles = res.items.map((itemRef) => deleteObject(itemRef));
+
+    // Recursively delete sub-prefixes
+    const deletePrefixes = res.prefixes.map((pref) => deleteFolder(pref.fullPath));
+
+    await Promise.all([...deleteFiles, ...deletePrefixes]);
+    console.log(`Deleted folder and contents at ${path}`);
+  } catch (error) {
+    console.error(`Failed to delete folder ${path}:`, error);
+    throw error;
+  }
+};
+
+export { deleteFolder };

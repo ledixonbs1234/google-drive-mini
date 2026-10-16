@@ -2,17 +2,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { FaSearch, FaTimes, FaFilter, FaHistory, FaBookmark, FaImage, FaVideo, FaMusic, FaFilePdf, FaFileCode, FaFile, FaFolder, FaCalendarAlt, FaSort } from 'react-icons/fa';
-import { storage } from '../lib/firebase';
-import { ref, listAll, getMetadata, getDownloadURL } from 'firebase/storage';
+import { FaSearch, FaTimes, FaFilter, FaHistory, FaImage, FaVideo, FaMusic, FaFilePdf, FaFileCode, FaFile, FaFolder } from 'react-icons/fa';
+import { StorageItem, listStorageItems } from '@/lib/storageClient';
 
-interface SearchResult {
-  name: string;
-  fullPath: string;
-  isFolder: boolean;
-  url?: string;
-  size?: number;
-  updated?: Date;
+interface SearchResult extends StorageItem {
   type?: string;
   matchType?: 'name' | 'content' | 'metadata';
   score?: number;
@@ -43,7 +36,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const [showFilters, setShowFilters] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const [savedSearches, setSavedSearches] = useState<{ term: string; name: string }[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
   
   const [filters, setFilters] = useState<SearchFilter>({
@@ -57,51 +49,31 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load search history from localStorage
   useEffect(() => {
     const savedHistory = localStorage.getItem('searchHistory');
-    const savedSearchesList = localStorage.getItem('savedSearches');
-    
     if (savedHistory) {
       setSearchHistory(JSON.parse(savedHistory));
     }
-    if (savedSearchesList) {
-      setSavedSearches(JSON.parse(savedSearchesList));
-    }
   }, []);
 
-  // Save search history to localStorage
   const saveSearchHistory = useCallback((term: string) => {
     const newHistory = [term, ...searchHistory.filter(h => h !== term)].slice(0, 10);
     setSearchHistory(newHistory);
     localStorage.setItem('searchHistory', JSON.stringify(newHistory));
   }, [searchHistory]);
 
-  // Save search to bookmarks
-  const saveSearch = useCallback((term: string, name: string) => {
-    const newSavedSearch = { term, name };
-    const newSavedSearches = [...savedSearches, newSavedSearch];
-    setSavedSearches(newSavedSearches);
-    localStorage.setItem('savedSearches', JSON.stringify(newSavedSearches));
-  }, [savedSearches]);
-
-  // Get file type for filtering
   const getFileType = (fileName: string): string => {
     const ext = fileName.toLowerCase().split('.').pop();
-    
     if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff'].includes(ext || '')) return 'image';
     if (['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'flv', '3gp'].includes(ext || '')) return 'video';
     if (['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'wma'].includes(ext || '')) return 'audio';
     if (['pdf', 'doc', 'docx', 'txt', 'rtf', 'md'].includes(ext || '')) return 'document';
     if (['js', 'ts', 'jsx', 'tsx', 'css', 'html', 'json', 'xml', 'yaml', 'yml'].includes(ext || '')) return 'code';
-    
     return 'other';
   };
 
-  // Get file icon
   const getFileIcon = (fileName: string, isFolder: boolean) => {
     if (isFolder) return <FaFolder className="w-4 h-4 text-blue-500" />;
-    
     const type = getFileType(fileName);
     switch (type) {
       case 'image': return <FaImage className="w-4 h-4 text-blue-500" />;
@@ -113,57 +85,52 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     }
   };
 
-  // Check if file matches filter
   const matchesFilter = (item: SearchResult): boolean => {
-    // Type filter
     if (filters.type !== 'all') {
       if (filters.type === 'folders' && !item.isFolder) return false;
       if (filters.type !== 'folders' && item.isFolder) return false;
       if (!item.isFolder && filters.type !== getFileType(item.name)) return false;
     }
 
-    // Date filter
     if (filters.dateRange !== 'all' && item.updated) {
       const now = new Date();
       const dayMs = 24 * 60 * 60 * 1000;
       const timeDiff = now.getTime() - item.updated.getTime();
-      
       switch (filters.dateRange) {
-        case 'today':
-          if (timeDiff > dayMs) return false;
-          break;
-        case 'week':
-          if (timeDiff > 7 * dayMs) return false;
-          break;
-        case 'month':
-          if (timeDiff > 30 * dayMs) return false;
-          break;
-        case 'year':
-          if (timeDiff > 365 * dayMs) return false;
-          break;
+        case 'today': if (timeDiff > dayMs) return false; break;
+        case 'week': if (timeDiff > 7 * dayMs) return false; break;
+        case 'month': if (timeDiff > 30 * dayMs) return false; break;
+        case 'year': if (timeDiff > 365 * dayMs) return false; break;
       }
     }
 
-    // Size filter
     if (filters.sizeRange !== 'all' && item.size) {
       const sizeMB = item.size / (1024 * 1024);
       switch (filters.sizeRange) {
-        case 'small':
-          if (sizeMB > 10) return false;
-          break;
-        case 'medium':
-          if (sizeMB <= 10 || sizeMB > 100) return false;
-          break;
-        case 'large':
-          if (sizeMB <= 100) return false;
-          break;
+        case 'small': if (sizeMB > 10) return false; break;
+        case 'medium': if (sizeMB <= 10 || sizeMB > 100) return false; break;
+        case 'large': if (sizeMB <= 100) return false; break;
       }
     }
 
     return true;
   };
 
-  // Search through Firebase Storage
+  const calculateRelevanceScore = (text: string, term: string): number => {
+    const lowerText = text.toLowerCase();
+    const lowerTerm = term.toLowerCase();
+    if (lowerText === lowerTerm) return 100;
+    if (lowerText.startsWith(lowerTerm)) return 80;
+    if (lowerText.includes(lowerTerm)) return 60;
+    const words = lowerTerm.split(' ');
+    let score = 0;
+    words.forEach(word => {
+      if (lowerText.includes(word)) score += 20;
+    });
+    return score;
+  };
+
+  // Tìm kiếm thông qua Cloudflare R2 API
   const searchFiles = useCallback(async (term: string) => {
     if (!term.trim()) {
       setResults([]);
@@ -171,69 +138,16 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     }
 
     setIsSearching(true);
-    const allResults: SearchResult[] = [];
-
     try {
-      // Recursive function to search through folders
-      const searchInFolder = async (path: string = '') => {
-        const storageRef = ref(storage, `uploads/${path}`);
-        const listResult = await listAll(storageRef);
+      const res = await listStorageItems('', term);
+      const enrichedResults: SearchResult[] = res.items.map(item => ({
+        ...item,
+        type: getFileType(item.name),
+        matchType: 'name',
+        score: calculateRelevanceScore(item.name, term)
+      }));
 
-        // Search in folders
-        for (const folderRef of listResult.prefixes) {
-          const folderName = folderRef.name;
-          const score = calculateRelevanceScore(folderName, term);
-          
-          if (score > 0) {
-            allResults.push({
-              name: folderName,
-              fullPath: folderRef.fullPath,
-              isFolder: true,
-              matchType: 'name',
-              score
-            });
-          }
-          
-          // Recursively search in subfolders (limit depth to avoid infinite loops)
-          if (path.split('/').length < 3) {
-            await searchInFolder(path + folderName + '/');
-          }
-        }
-
-        // Search in files
-        for (const fileRef of listResult.items) {
-          const fileName = fileRef.name;
-          const score = calculateRelevanceScore(fileName, term);
-          
-          if (score > 0) {
-            try {
-              const [url, metadata] = await Promise.all([
-                getDownloadURL(fileRef),
-                getMetadata(fileRef)
-              ]);
-
-              allResults.push({
-                name: fileName,
-                fullPath: fileRef.fullPath,
-                isFolder: false,
-                url,
-                size: metadata.size,
-                updated: metadata.updated ? new Date(metadata.updated) : undefined,
-                type: getFileType(fileName),
-                matchType: 'name',
-                score
-              });
-            } catch (error) {
-              console.error('Error getting file metadata:', error);
-            }
-          }
-        }
-      };
-
-      await searchInFolder();
-
-      // Filter and sort results
-      const filteredResults = allResults
+      const filteredResults = enrichedResults
         .filter(matchesFilter)
         .sort((a, b) => {
           switch (filters.sortBy) {
@@ -258,41 +172,20 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
       setResults(filteredResults);
     } catch (error) {
-      console.error('Search error:', error);
+      console.error('Search error Cloudflare R2:', error);
     } finally {
       setIsSearching(false);
     }
   }, [filters]);
 
-  // Calculate relevance score for search term
-  const calculateRelevanceScore = (text: string, term: string): number => {
-    const lowerText = text.toLowerCase();
-    const lowerTerm = term.toLowerCase();
-    
-    if (lowerText === lowerTerm) return 100;
-    if (lowerText.startsWith(lowerTerm)) return 80;
-    if (lowerText.includes(lowerTerm)) return 60;
-    
-    // Fuzzy matching
-    const words = lowerTerm.split(' ');
-    let score = 0;
-    words.forEach(word => {
-      if (lowerText.includes(word)) score += 20;
-    });
-    
-    return score;
-  };
-
-  // Handle search input change
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchTerm(value);
-    
-    // Debounce search
+
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
-    
+
     searchTimeoutRef.current = setTimeout(() => {
       if (value.trim()) {
         searchFiles(value);
@@ -303,33 +196,27 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     }, 300);
   };
 
-  // Handle search from history
   const handleHistorySearch = (term: string) => {
     setSearchTerm(term);
     searchFiles(term);
     setShowHistory(false);
   };
 
-  // Handle result click
   const handleResultClick = (result: SearchResult) => {
     if (result.isFolder && onNavigate) {
-      // Navigate to folder
-      const folderPath = result.fullPath.replace('uploads/', '');
+      const folderPath = result.fullPath.replace(/^uploads\//, '');
       onNavigate(folderPath);
     } else if (onResultSelect) {
-      // Select file
       onResultSelect(result);
     }
   };
 
-  // Clear search
   const clearSearch = () => {
     setSearchTerm('');
     setResults([]);
     setIsExpanded(false);
   };
 
-  // Format file size
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -338,7 +225,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  // Format date
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('vi-VN', {
       year: 'numeric',
@@ -349,7 +235,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
   return (
     <div className={`relative ${className}`}>
-      {/* Search Input */}
       <div className="relative">
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
           <FaSearch className="h-4 w-4 text-gray-400" />
@@ -364,7 +249,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
           className="w-full pl-10 pr-20 py-2 border border-gray-300 dark:border-zinc-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-zinc-800 dark:text-white"
         />
         
-        {/* Action buttons */}
         <div className="absolute inset-y-0 right-0 flex items-center space-x-1 pr-2">
           <button
             onClick={() => setShowHistory(!showHistory)}
@@ -392,7 +276,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
         </div>
       </div>
 
-      {/* Search History Dropdown */}
       {showHistory && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-800 rounded-lg shadow-lg border border-gray-200 dark:border-zinc-700 z-10">
           <div className="p-3">
@@ -416,13 +299,11 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
         </div>
       )}
 
-      {/* Filter Panel */}
       {showFilters && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-800 rounded-lg shadow-lg border border-gray-200 dark:border-zinc-700 z-10">
           <div className="p-4 space-y-4">
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Bộ lọc</h3>
             
-            {/* Type Filter */}
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Loại file</label>
               <select
@@ -440,7 +321,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               </select>
             </div>
 
-            {/* Date Filter */}
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Thời gian</label>
               <select
@@ -456,7 +336,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               </select>
             </div>
 
-            {/* Size Filter */}
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Kích thước</label>
               <select
@@ -471,7 +350,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               </select>
             </div>
 
-            {/* Sort Options */}
             <div className="flex space-x-2">
               <div className="flex-1">
                 <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Sắp xếp</label>
@@ -502,7 +380,6 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
         </div>
       )}
 
-      {/* Search Results */}
       {isExpanded && (searchTerm || results.length > 0) && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-800 rounded-lg shadow-lg border border-gray-200 dark:border-zinc-700 z-10 max-h-96 overflow-y-auto">
           {isSearching ? (
@@ -527,7 +404,7 @@ const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                       {result.name}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {result.fullPath.replace('uploads/', '')}
+                      {result.fullPath.replace(/^uploads\//, '')}
                     </div>
                   </div>
                   {!result.isFolder && (

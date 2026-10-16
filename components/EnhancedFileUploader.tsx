@@ -3,10 +3,9 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { FaUpload, FaCloudUploadAlt, FaTimes, FaFile, FaImage, FaFilePdf, FaVideo, FaMusic, FaFileCode, FaFolder, FaCheckCircle, FaExclamationTriangle, FaInfoCircle } from 'react-icons/fa';
-import { uploadBytesResumable, ref, UploadTaskSnapshot } from 'firebase/storage';
-import { storage } from '../lib/firebase';
 import { useStorageQuota } from '../hooks/useStorageQuota';
 import { useFileUploadValidation } from '../hooks/useFileUploadValidation';
+import { uploadFileToR2 } from '@/lib/storageClient';
 import JSZip from 'jszip';
 
 interface FileWithPreview {
@@ -16,7 +15,6 @@ interface FileWithPreview {
   uploadProgress?: number;
   uploadStatus?: 'pending' | 'zipping' | 'uploading' | 'success' | 'error';
   errorMessage?: string;
-  uploadTask?: ReturnType<typeof uploadBytesResumable>;
 }
 
 interface EnhancedFileUploaderProps {
@@ -25,7 +23,6 @@ interface EnhancedFileUploaderProps {
   className?: string;
 }
 
-// Định nghĩa các phần mở rộng cần nén
 const EXECUTABLE_EXTENSIONS = ['exe', 'msi', 'bat', 'cmd', 'sh', 'app', 'dmg', 'deb', 'rpm', 'apk'];
 const ARCHIVE_EXTENSIONS = ['zip', 'rar', '7z', 'tar', 'gz'];
 
@@ -42,19 +39,16 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
   const { storageInfo, refreshStorageQuota } = useStorageQuota();
   const { validateFileUpload } = useFileUploadValidation();
 
-  // Helper function to check if file needs compression
   const needsCompression = (fileName: string): boolean => {
     const ext = fileName.split('.').pop()?.toLowerCase();
     return EXECUTABLE_EXTENSIONS.includes(ext || '');
   };
 
-  // Helper function to check if file is already compressed
   const isArchive = (fileName: string): boolean => {
     const ext = fileName.split('.').pop()?.toLowerCase();
     return ARCHIVE_EXTENSIONS.includes(ext || '');
   };
 
-  // Drag & Drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -71,23 +65,18 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-
     const droppedFiles = Array.from(e.dataTransfer.files);
     processFiles(droppedFiles);
   }, []);
 
-  // File selection handler
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
     processFiles(selectedFiles);
   }, []);
 
-  // Process files with validation and preview generation
   const processFiles = useCallback(async (fileList: File[]) => {
     const newFiles: FileWithPreview[] = [];
-
     for (const file of fileList) {
-      // Validate file
       const validationResult = validateFileUpload([file]);
       if (!validationResult.canUpload) {
         alert(`File ${file.name}: ${validationResult.message}`);
@@ -101,7 +90,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
         uploadStatus: 'pending'
       };
 
-      // Generate preview for images
       if (file.type.startsWith('image/')) {
         try {
           const preview = await generateImagePreview(file);
@@ -113,11 +101,9 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
 
       newFiles.push(fileWithPreview);
     }
-
     setFiles(prev => [...prev, ...newFiles]);
   }, [validateFileUpload]);
 
-  // Generate image preview
   const generateImagePreview = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -127,37 +113,23 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
     });
   };
 
-  // Compress file using JSZip
   const compressFile = async (file: File): Promise<File> => {
     const zip = new JSZip();
     zip.file(file.name, file);
-    
     const zipBlob = await zip.generateAsync({ type: 'blob' });
     const zipName = `${file.name}.zip`;
-    
     return new File([zipBlob], zipName, { type: 'application/zip' });
   };
 
-  // Remove file from list
   const removeFile = useCallback((id: string) => {
-    setFiles(prev => {
-      const updatedFiles = prev.filter(f => f.id !== id);
-      // Cancel upload task if it exists
-      const fileToRemove = prev.find(f => f.id === id);
-      if (fileToRemove?.uploadTask) {
-        fileToRemove.uploadTask.cancel();
-      }
-      return updatedFiles;
-    });
+    setFiles(prev => prev.filter(f => f.id !== id));
   }, []);
 
-  // Upload single file
   const uploadFile = async (fileWithPreview: FileWithPreview): Promise<void> => {
     const { file, id } = fileWithPreview;
     let fileToUpload = file;
 
     try {
-      // Check if file needs compression
       if (needsCompression(file.name)) {
         setFiles(prev => prev.map(f => 
           f.id === id ? { ...f, uploadStatus: 'zipping' as const } : f
@@ -165,63 +137,35 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
         fileToUpload = await compressFile(file);
       }
 
-      // Update status to uploading
       setFiles(prev => prev.map(f => 
         f.id === id ? { ...f, uploadStatus: 'uploading' as const, uploadProgress: 0 } : f
       ));
 
-      const storageRef = ref(storage, `uploads/${currentPath}${fileToUpload.name}`);
-      const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
+      // Upload lên Cloudflare R2 qua API
+      await uploadFileToR2(fileToUpload, currentPath, (progress) => {
+        setFiles(prev => prev.map(f => 
+          f.id === id ? { ...f, uploadProgress: progress } : f
+        ));
+      });
 
-      // Store upload task for potential cancellation
       setFiles(prev => prev.map(f => 
-        f.id === id ? { ...f, uploadTask } : f
+        f.id === id ? { ...f, uploadStatus: 'success' as const, uploadProgress: 100 } : f
       ));
-
-      // Monitor upload progress
-      uploadTask.on('state_changed', 
-        (snapshot: UploadTaskSnapshot) => {
-          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          setFiles(prev => prev.map(f => 
-            f.id === id ? { ...f, uploadProgress: progress } : f
-          ));
-        },
-        (error) => {
-          console.error('Upload error:', error);
-          setFiles(prev => prev.map(f => 
-            f.id === id ? { 
-              ...f, 
-              uploadStatus: 'error' as const, 
-              errorMessage: error.message 
-            } : f
-          ));
-        },
-        () => {
-          // Upload completed successfully
-          setFiles(prev => prev.map(f => 
-            f.id === id ? { ...f, uploadStatus: 'success' as const, uploadProgress: 100 } : f
-          ));
-        }
-      );
-
-      await uploadTask;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Upload failed:', error);
       setFiles(prev => prev.map(f => 
         f.id === id ? { 
           ...f, 
           uploadStatus: 'error' as const, 
-          errorMessage: error instanceof Error ? error.message : 'Upload failed'
+          errorMessage: error?.message || 'Upload failed' 
         } : f
       ));
     }
   };
 
-  // Upload all files
   const uploadFiles = useCallback(async () => {
     if (files.length === 0) return;
 
-    // Check storage quota
     if (storageInfo) {
       const totalSize = files.reduce((sum, f) => sum + f.file.size, 0);
       if (storageInfo.remainingBytes < totalSize) {
@@ -231,25 +175,20 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
     }
 
     setIsUploading(true);
-    
-    // Upload files in parallel
-    const uploadPromises = files
-      .filter(f => f.uploadStatus === 'pending')
-      .map(uploadFile);
 
+    const pendingFiles = files.filter(f => f.uploadStatus === 'pending' || f.uploadStatus === 'error');
+    const uploadPromises = pendingFiles.map(uploadFile);
     await Promise.all(uploadPromises);
-    
+
     setIsUploading(false);
     refreshStorageQuota();
     onUploadComplete();
-    
-    // Clear successful uploads after a delay
+
     setTimeout(() => {
       setFiles(prev => prev.filter(f => f.uploadStatus !== 'success'));
     }, 3000);
-  }, [files, storageInfo, refreshStorageQuota, onUploadComplete]);
+  }, [files, storageInfo, refreshStorageQuota, onUploadComplete, currentPath]);
 
-  // Get file icon
   const getFileIcon = (file: File) => {
     if (file.type.startsWith('image/')) return <FaImage className="w-6 h-6 text-blue-500" />;
     if (file.type.startsWith('video/')) return <FaVideo className="w-6 h-6 text-red-500" />;
@@ -259,7 +198,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
     return <FaFile className="w-6 h-6 text-gray-500" />;
   };
 
-  // Get status icon
   const getStatusIcon = (status: FileWithPreview['uploadStatus']) => {
     switch (status) {
       case 'success':
@@ -275,7 +213,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
     }
   };
 
-  // Format file size
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -284,7 +221,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  // Compact view
   if (showCompactView) {
     return (
       <div className={`w-full ${className}`}>
@@ -315,10 +251,9 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
 
   return (
     <div className={`w-full ${className}`}>
-      {/* Header with toggle */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-medium text-gray-700 dark:text-gray-200">
-          Upload Files
+          Upload Files (Cloudflare R2)
         </h3>
         <button
           onClick={() => setShowCompactView(true)}
@@ -328,7 +263,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
         </button>
       </div>
 
-      {/* Drag & Drop Zone */}
       <div
         className={`relative border-2 border-dashed rounded-lg p-8 transition-all duration-200 ${
           isDragging
@@ -359,17 +293,15 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
             </p>
           </div>
           
-          {/* Storage info */}
           {storageInfo && (
             <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
               <FaInfoCircle className="w-3 h-3" />
-              <span>Dung lượng còn lại: {formatFileSize(storageInfo.remainingBytes)}</span>
+              <span>Dung lượng còn lại: {formatFileSize(storageInfo.remainingBytes)} / 10 GB</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -378,7 +310,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
         onChange={handleFileSelect}
       />
 
-      {/* File List */}
       {files.length > 0 && (
         <div className="mt-6 space-y-3">
           <div className="flex items-center justify-between">
@@ -403,7 +334,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
                 key={fileWithPreview.id}
                 className="flex items-center space-x-4 p-3 bg-gray-50 dark:bg-zinc-800 rounded-lg"
               >
-                {/* File Icon/Preview */}
                 <div className="flex-shrink-0">
                   {fileWithPreview.preview ? (
                     <img
@@ -418,7 +348,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
                   )}
                 </div>
 
-                {/* File Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2">
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
@@ -434,12 +363,10 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
                     {formatFileSize(fileWithPreview.file.size)}
                   </p>
                   
-                  {/* Status text */}
                   {fileWithPreview.uploadStatus === 'zipping' && (
                     <p className="text-xs text-yellow-600 mt-1">Đang nén file...</p>
                   )}
                   
-                  {/* Progress Bar */}
                   {fileWithPreview.uploadStatus === 'uploading' && (
                     <div className="mt-2 w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2">
                       <div
@@ -449,7 +376,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
                     </div>
                   )}
                   
-                  {/* Error Message */}
                   {fileWithPreview.uploadStatus === 'error' && (
                     <p className="text-xs text-red-500 mt-1">
                       {fileWithPreview.errorMessage}
@@ -457,7 +383,6 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
                   )}
                 </div>
 
-                {/* Status & Actions */}
                 <div className="flex items-center space-x-2">
                   {getStatusIcon(fileWithPreview.uploadStatus)}
                   
