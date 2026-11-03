@@ -6,17 +6,19 @@ import { FaSync, FaExclamationTriangle, FaKeyboard, FaCloud } from 'react-icons/
 
 const SharedNotepad: React.FC = () => {
   const [noteContent, setNoteContent] = useState<string>('');
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('offline');
-  const [storageSource, setStorageSource] = useState<string>('Cloudflare');
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
+  const [storageSource, setStorageSource] = useState<string>('Cloudflare R2');
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [wordCount, setWordCount] = useState<number>(0);
   const [isClient, setIsClient] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const latestContentRef = useRef<string>('');
   const isSavingRef = useRef<boolean>(false);
+  const hasPendingChangesRef = useRef<boolean>(false);
 
   const countWords = (text: string): number => {
     return text.trim().split(/\s+/).filter(word => word.length > 0).length;
@@ -27,8 +29,12 @@ const SharedNotepad: React.FC = () => {
   };
 
   // Lưu nội dung ghi chú lên Cloudflare API
-  const saveToServer = async (content: string) => {
-    if (!isOnline) return;
+  const saveToServer = useCallback(async (content: string) => {
+    if (typeof window !== 'undefined' && !navigator.onLine) {
+      setSyncStatus('offline');
+      return;
+    }
+
     isSavingRef.current = true;
     setSyncStatus('syncing');
 
@@ -43,76 +49,100 @@ const SharedNotepad: React.FC = () => {
 
       const data = await res.json();
       latestContentRef.current = content;
+      hasPendingChangesRef.current = false;
       setSyncStatus('synced');
       setLastSyncTime(new Date());
+
       if (data.source) {
         setStorageSource(data.source === 'cloudflare-d1' ? 'Cloudflare D1' : 'Cloudflare R2');
       }
     } catch (error) {
-      console.error("Lỗi khi lưu ghi chú lên Cloudflare:", error);
+      console.error('Lỗi khi lưu ghi chú lên Cloudflare:', error);
       setSyncStatus('error');
     } finally {
       isSavingRef.current = false;
     }
-  };
+  }, []);
 
-  const debouncedSave = useCallback((content: string) => {
+  const triggerDebouncedSave = useCallback((content: string) => {
+    hasPendingChangesRef.current = true;
+    setSyncStatus('syncing');
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
     saveTimeoutRef.current = setTimeout(() => {
       saveToServer(content);
-    }, 1000);
-  }, [isOnline]);
+    }, 800);
+  }, [saveToServer]);
 
-  // Đọc nội dung ghi chú ban đầu và định kỳ kiểm tra thay đổi
-  const fetchNote = useCallback(async () => {
+  // Đọc nội dung ghi chú ban đầu hoặc đồng bộ định kỳ
+  const fetchNote = useCallback(async (isInitialLoad = false) => {
     try {
+      // TUYỆT ĐỐI KHÔNG ghi đè nếu:
+      // 1. Đang có thay đổi chưa lưu (hasPendingChangesRef)
+      // 2. Đang trong quá trình lưu (isSavingRef)
+      // 3. Người dùng đang focus vào textarea để gõ chữ (trừ lần đầu mount)
+      const isFocused = typeof document !== 'undefined' && textareaRef.current && document.activeElement === textareaRef.current;
+      if (!isInitialLoad && (hasPendingChangesRef.current || isSavingRef.current || isFocused)) {
+        return;
+      }
+
       const res = await fetch('/api/notepad');
       if (res.ok) {
         const data = await res.json();
         const serverContent = data.content || '';
+
         if (data.source) {
           setStorageSource(data.source === 'cloudflare-d1' ? 'Cloudflare D1' : 'Cloudflare R2');
         }
 
-        // Chỉ cập nhật nếu không đang tự gõ hoặc đang lưu
-        if (!isSavingRef.current && serverContent !== latestContentRef.current) {
+        // Kiểm tra lại lần nữa trước khi cập nhật state
+        const stillFocused = typeof document !== 'undefined' && textareaRef.current && document.activeElement === textareaRef.current;
+        if (isInitialLoad || (!hasPendingChangesRef.current && !isSavingRef.current && !stillFocused)) {
           setNoteContent(serverContent);
           latestContentRef.current = serverContent;
           setWordCount(countWords(serverContent));
           setSyncStatus('synced');
-          setLastSyncTime(data.updatedAt ? new Date(data.updatedAt) : new Date());
+          if (data.updatedAt) {
+            setLastSyncTime(new Date(data.updatedAt));
+          }
         }
       }
     } catch (err) {
       console.error('Lỗi khi fetch notepad từ Cloudflare:', err);
-      setSyncStatus('error');
+      if (isInitialLoad) {
+        setSyncStatus('error');
+      }
     } finally {
-      setIsLoading(false);
+      if (isInitialLoad) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
+  // Chỉ chạy 1 lần duy nhất khi component mount
   useEffect(() => {
     setIsClient(true);
     if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
     }
 
-    fetchNote();
+    // Tải dữ liệu ban đầu
+    fetchNote(true);
 
-    // Polling định kỳ 15 giây để đồng bộ nếu có thay đổi từ thiết bị khác
+    // Polling định kỳ mỗi 20 giây để đồng bộ nếu có thay đổi từ tab/thiết bị khác
     const interval = setInterval(() => {
-      if (!isSavingRef.current && document.visibilityState === 'visible') {
-        fetchNote();
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchNote(false);
       }
-    }, 15000);
+    }, 20000);
 
     const handleOnline = () => {
       setIsOnline(true);
-      if (latestContentRef.current !== noteContent) {
-        debouncedSave(latestContentRef.current);
+      if (hasPendingChangesRef.current && latestContentRef.current) {
+        saveToServer(latestContentRef.current);
       }
     };
 
@@ -132,7 +162,7 @@ const SharedNotepad: React.FC = () => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [fetchNote, debouncedSave, noteContent]);
+  }, [fetchNote, saveToServer]);
 
   const handleNoteChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = event.target.value;
@@ -141,16 +171,14 @@ const SharedNotepad: React.FC = () => {
     setNoteContent(newText);
     setWordCount(countWords(newText));
     latestContentRef.current = newText;
-    debouncedSave(newText);
+    triggerDebouncedSave(newText);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 's') {
       event.preventDefault();
-      if (latestContentRef.current && isOnline) {
-        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-        saveToServer(latestContentRef.current);
-      }
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveToServer(latestContentRef.current);
     }
   };
 
@@ -159,11 +187,19 @@ const SharedNotepad: React.FC = () => {
       case 'synced':
         return <span className="text-xs text-green-600 dark:text-green-400">Đã đồng bộ</span>;
       case 'syncing':
-        return <span className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center"><FaSync className="animate-spin mr-1"/> Đang đồng bộ...</span>;
+        return (
+          <span className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center">
+            <FaSync className="animate-spin mr-1" /> Đang đồng bộ...
+          </span>
+        );
       case 'offline':
         return <span className="text-xs text-red-600 dark:text-red-400">Mất kết nối</span>;
       case 'error':
-        return <span className="text-xs text-red-600 dark:text-red-400 flex items-center"><FaExclamationTriangle className="mr-1"/> Lỗi đồng bộ</span>;
+        return (
+          <span className="text-xs text-red-600 dark:text-red-400 flex items-center">
+            <FaExclamationTriangle className="mr-1" /> Lỗi đồng bộ
+          </span>
+        );
       default:
         return null;
     }
@@ -197,10 +233,11 @@ const SharedNotepad: React.FC = () => {
           {getStatusIndicator()}
         </div>
       </div>
+
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-        Nội dung được lưu trữ và đồng bộ tự động trên nền tảng <strong>Cloudflare Free Tier</strong>.
+        Nội dung được lưu trữ và đồng bộ tự động trên nền tảng <strong>Cloudflare R2</strong>.
       </p>
-      
+
       <div className="flex justify-between items-center mb-2 text-xs text-gray-500 dark:text-gray-400">
         <div className="flex items-center space-x-4">
           <span className="flex items-center">
@@ -228,12 +265,13 @@ const SharedNotepad: React.FC = () => {
           )}
         </div>
       </div>
-      
+
       <textarea
+        ref={textareaRef}
         value={noteContent}
         onChange={handleNoteChange}
         onKeyDown={handleKeyDown}
-        placeholder="Nhập ghi chú của bạn vào đây (tự động đồng bộ lên Cloudflare)..."
+        placeholder="Nhập ghi chú của bạn vào đây (tự động đồng bộ lên Cloudflare R2)..."
         className="w-full h-48 p-3 border border-gray-300 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-gray-100 transition-shadow resize-none"
         style={{ minHeight: '12rem' }}
       />
