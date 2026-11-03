@@ -14,6 +14,12 @@ export interface StorageQuotaInfo {
   remainingBytes: number;
   percentUsed: number;
   configured?: boolean;
+  planType?: 'paid' | 'free';
+  totalObjects?: number;
+  freeTierBytes?: number;
+  estimatedCostUsd?: number;
+  hardCapEnabled?: boolean;
+  isLocked?: boolean;
 }
 
 /**

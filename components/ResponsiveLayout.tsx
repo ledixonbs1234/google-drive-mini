@@ -69,7 +69,7 @@ const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
               </button>
             )}
             <h1 className="text-lg font-semibold text-gray-800 dark:text-white">
-              Google Drive Mini
+              Cloudflare Drive Mini
             </h1>
           </div>
         </div>

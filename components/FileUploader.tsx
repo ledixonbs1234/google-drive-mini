@@ -154,7 +154,7 @@ export default function FileUploader({ currentPath = '', onUploadComplete }: Fil
         )}
         {storageInfo && (
           <div className="mt-3 flex items-center justify-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
-            <span>Còn lại: <strong className="text-blue-600 dark:text-blue-400">{formatBytes(storageInfo.remainingBytes)}</strong> / 10 GB</span>
+            <span>Còn lại: <strong className="text-blue-600 dark:text-blue-400">{formatBytes(storageInfo.remainingBytes)}</strong> / {formatBytes(storageInfo.totalBytes)}</span>
             <span>|</span>
             <span>Đã dùng: {storageInfo.percentUsed.toFixed(1)}%</span>
           </div>

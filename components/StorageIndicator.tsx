@@ -117,7 +117,7 @@ const StorageIndicator: React.FC<StorageIndicatorProps> = ({
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
                 {getStatusIcon()}
-                <span className="font-medium">Storage Status</span>
+                <span className="font-medium">🛡️ Khóa An Toàn 10 GB</span>
               </div>
               <div>Còn lại: <span className="font-medium">{formatBytesFull(remainingBytes)}</span></div>
               <div>Đã dùng: <span className="font-medium">{formatBytesFull(storageInfo.usedBytes)}</span></div>

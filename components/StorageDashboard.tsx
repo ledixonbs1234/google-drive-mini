@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { FaHdd, FaFile, FaFolder, FaChartPie, FaInfoCircle, FaRedo, FaExclamationTriangle, FaCheckCircle } from 'react-icons/fa';
+import { FaHdd, FaFile, FaFolder, FaChartPie, FaInfoCircle, FaRedo, FaExclamationTriangle, FaCheckCircle, FaShieldAlt } from 'react-icons/fa';
 import { useStorageQuota } from '../hooks/useStorageQuota';
 
 interface StorageDashboardProps {
@@ -26,7 +26,7 @@ const StorageDashboard: React.FC<StorageDashboardProps> = ({ refreshTrigger }) =
   const getStorageRecommendation = (percentUsed: number) => {
     if (percentUsed > 95) {
       return {
-        message: "Dung lượng gần hết! Hãy xóa bớt file không cần thiết.",
+        message: "Dung lượng sắp chạm ngưỡng an toàn 10 GB! Upload sẽ bị khóa tự động để bảo vệ thẻ thanh toán của bạn.",
         color: "text-red-600 dark:text-red-400",
         bgColor: "bg-red-50 dark:bg-red-900/20",
         borderColor: "border-red-200 dark:border-red-700",
@@ -34,7 +34,7 @@ const StorageDashboard: React.FC<StorageDashboardProps> = ({ refreshTrigger }) =
       };
     } else if (percentUsed > 80) {
       return {
-        message: "Dung lượng sắp hết. Cân nhắc dọn dẹp file cũ.",
+        message: "Đã sử dụng hơn 80% hạn mức an toàn 10 GB miễn phí. Hãy xóa bớt file không cần thiết.",
         color: "text-orange-600 dark:text-orange-400", 
         bgColor: "bg-orange-50 dark:bg-orange-900/20",
         borderColor: "border-orange-200 dark:border-orange-700",
@@ -42,7 +42,7 @@ const StorageDashboard: React.FC<StorageDashboardProps> = ({ refreshTrigger }) =
       };
     } else if (percentUsed > 60) {
       return {
-        message: "Dung lượng ở mức trung bình, vẫn còn nhiều chỗ trống.",
+        message: "Dung lượng ở mức an toàn. Chế độ Khóa Bảo Vệ Thẻ đang hoạt động tích cực.",
         color: "text-blue-600 dark:text-blue-400",
         bgColor: "bg-blue-50 dark:bg-blue-900/20", 
         borderColor: "border-blue-200 dark:border-blue-700",
@@ -50,7 +50,7 @@ const StorageDashboard: React.FC<StorageDashboardProps> = ({ refreshTrigger }) =
       };
     } else {
       return {
-        message: "Dung lượng còn rất nhiều, thoải mái upload file!",
+        message: "Dung lượng còn rất nhiều chỗ trống. Đã khóa cứng mức 10 GB Free Tier, chi phí đảm bảo $0.00!",
         color: "text-green-600 dark:text-green-400",
         bgColor: "bg-green-50 dark:bg-green-900/20",
         borderColor: "border-green-200 dark:border-green-700", 
@@ -178,14 +178,30 @@ const StorageDashboard: React.FC<StorageDashboardProps> = ({ refreshTrigger }) =
         {/* Total Storage */}
         <div className="bg-gray-50 dark:bg-zinc-900 rounded-lg p-4">
           <div className="flex items-center space-x-2 mb-2">
-            <FaHdd className="w-4 h-4 text-purple-500" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Tổng dung lượng</span>
+            <FaShieldAlt className="w-4 h-4 text-emerald-500" />
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Hạn mức an toàn ($0 phí thẻ)</span>
           </div>
-          <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
-            {formatBytes(storageInfo.totalBytes)}
+          <p className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            <span>{formatBytes(storageInfo.totalBytes)}</span>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+              🛡️ Đã Khóa Cứng 10 GB Miễn Phí
+            </span>
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Firebase Storage (Plan miễn phí)
+          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">
+            Chống phát sinh chi phí • $0 Phí băng thông Egress
+          </p>
+        </div>
+      </div>
+
+      {/* Safety Banner */}
+      <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3.5 flex items-start gap-3">
+        <FaShieldAlt className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+        <div className="text-xs space-y-1">
+          <p className="font-semibold text-emerald-900 dark:text-emerald-200">
+            🛡️ Chế độ Bảo Vệ Thẻ Ngân Hàng: ĐANG HOẠT ĐỘNG
+          </p>
+          <p className="text-emerald-700 dark:text-emerald-300">
+            Ứng dụng đã được khóa cứng tại mốc 10 GB dung lượng miễn phí của Cloudflare R2. Nếu file tải lên vượt quá hạn mức này, server sẽ tự động từ chối để tuyệt đối không trừ tiền vào thẻ của bạn.
           </p>
         </div>
       </div>
@@ -237,8 +253,18 @@ const StorageDashboard: React.FC<StorageDashboardProps> = ({ refreshTrigger }) =
             </div>
             
             <div className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">Loại tài khoản:</span>
-              <span className="font-medium">Firebase Free Tier</span>
+              <span className="text-gray-600 dark:text-gray-400">Tổng số tệp lưu trữ:</span>
+              <span className="font-medium">{storageInfo.totalObjects ?? '-'} tệp</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">Loại tài khoản R2:</span>
+              <span className="font-medium text-orange-600 dark:text-orange-400 font-semibold">
+                {storageInfo.planType === 'paid' ? 'Cloudflare R2 Paid Plan' : 'Cloudflare R2 Free Tier'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">Phí tải ra (Egress Fees):</span>
+              <span className="font-medium text-green-600 dark:text-green-400">$0 (Miễn phí 100%)</span>
             </div>
           </div>
         </div>

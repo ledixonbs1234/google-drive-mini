@@ -23,8 +23,8 @@ export const useFileUploadValidation = () => {
 
     const remainingSpace = storageInfo.totalBytes - storageInfo.usedBytes;
     
-    // Kiểm tra xem có đủ dung lượng không
-    if (totalFileSize > remainingSpace) {
+    // Kiểm tra xem có đủ dung lượng không (Chốt chặn Khóa An Toàn 10 GB)
+    if (totalFileSize > remainingSpace || storageInfo.isLocked) {
       const formatBytes = (bytes: number): string => {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -35,7 +35,7 @@ export const useFileUploadValidation = () => {
 
       return {
         canUpload: false,
-        message: `Không đủ dung lượng! Cần ${formatBytes(totalFileSize)} nhưng chỉ còn ${formatBytes(remainingSpace)}.`,
+        message: `🛡️ KHÓA AN TOÀN BẢO VỆ THẺ: Cần thêm ${formatBytes(totalFileSize)} nhưng hạn mức an toàn miễn phí 10 GB chỉ còn ${formatBytes(remainingSpace)}. Ứng dụng đã khóa upload để tuyệt đối không trừ tiền vào thẻ ngân hàng của bạn!`,
         totalSize: totalFileSize,
         remainingSpace
       };

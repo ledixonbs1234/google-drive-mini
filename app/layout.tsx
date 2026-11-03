@@ -7,8 +7,8 @@ import ThemeProvider from "@/components/ThemeProvider"; // Import ThemeProvider
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Google Drive Mini - Windows Style",
-  description: "Một ứng dụng quản lý file mini giống Google Drive",
+  title: "Cloudflare Drive Mini - R2 Storage",
+  description: "Ứng dụng quản lý tệp tin trực tuyến mini trên nền tảng Cloudflare R2 Storage",
 };
 
 export default function RootLayout({

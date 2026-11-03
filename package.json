@@ -19,7 +19,6 @@
     "classnames": "^2.5.1",
     "clsx": "^2.1.1",
     "file-saver": "^2.0.5",
-    "firebase": "^11.6.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.11.0",
     "next": "15.2.5",

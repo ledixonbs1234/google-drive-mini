@@ -178,8 +178,8 @@ export default function Home() {
                 <FaCloud className="text-orange-500" />
                 <span>Drive Mini</span>
               </h1>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300 font-medium border border-orange-200 dark:border-orange-800">
-                Cloudflare R2 Free (10 GB)
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-medium border border-emerald-300 dark:border-emerald-800 flex items-center gap-1" title="Đã khóa cứng 10 GB Free Tier để bảo vệ thẻ, $0 chi phí phát sinh">
+                <span>🛡️ R2 Paid • Khóa 10 GB ($0 Phí Thẻ)</span>
               </span>
               <StorageIndicator
                 refreshTrigger={storageRefreshTrigger}

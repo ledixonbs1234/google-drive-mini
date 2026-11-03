@@ -5,7 +5,7 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
-import { r2Client, BUCKET_NAME, isR2Configured, getFileUrl } from '@/lib/cloudflareR2';
+import { r2Client, BUCKET_NAME, isR2Configured, getFileUrl, invalidateStorageUsageCache } from '@/lib/cloudflareR2';
 
 export const dynamic = 'force-dynamic';
 
@@ -160,7 +160,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Thiếu key của file hoặc thư mục cần xóa' }, { status: 400 });
     }
 
-    if (isFolder) {
+        if (isFolder) {
       // Xóa toàn bộ objects có prefix bắt đầu bằng folder path
       const folderPrefix = key.endsWith('/') ? key : `${key}/`;
       let continuationToken: string | undefined = undefined;
@@ -174,6 +174,7 @@ export async function DELETE(request: NextRequest) {
             ContinuationToken: continuationToken,
           })
         );
+
         const objectsToDelete = (listRes.Contents || [])
           .filter((o): o is typeof o & { Key: string } => typeof o.Key === 'string')
           .map(o => ({ Key: o.Key }));
@@ -191,6 +192,7 @@ export async function DELETE(request: NextRequest) {
         continuationToken = listRes.NextContinuationToken;
       } while (continuationToken);
 
+      invalidateStorageUsageCache();
       return NextResponse.json({ success: true, deletedCount: totalDeleted });
     }
 
@@ -202,6 +204,7 @@ export async function DELETE(request: NextRequest) {
       })
     );
 
+    invalidateStorageUsageCache();
     return NextResponse.json({ success: true, deletedKey: key });
   } catch (error: any) {
     console.error('Lỗi xóa object từ Cloudflare R2:', error);

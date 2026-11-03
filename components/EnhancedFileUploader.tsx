@@ -296,7 +296,7 @@ const EnhancedFileUploader: React.FC<EnhancedFileUploaderProps> = ({
           {storageInfo && (
             <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
               <FaInfoCircle className="w-3 h-3" />
-              <span>Dung lượng còn lại: {formatFileSize(storageInfo.remainingBytes)} / 10 GB</span>
+              <span>Dung lượng còn lại: {formatFileSize(storageInfo.remainingBytes)} / {formatFileSize(storageInfo.totalBytes)}</span>
             </div>
           )}
         </div>
