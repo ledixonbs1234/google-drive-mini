@@ -15,6 +15,20 @@ import {
 export const dynamic = 'force-dynamic';
 
 /**
+ * Chuẩn hóa S3 Key cho file upload
+ */
+function buildUploadKey(rawPath: string, fileName: string): string {
+  let clean = (rawPath || '').replace(/^\//, '');
+  if (clean.startsWith('uploads/')) {
+    clean = clean.slice('uploads/'.length);
+  }
+  if (clean && !clean.endsWith('/')) {
+    clean += '/';
+  }
+  return `uploads/${clean}${fileName}`;
+}
+
+/**
  * Kiểm tra xem upload mới có vượt quá 10 GB miễn phí hay không
  */
 async function verifySafetyLimit(additionalBytes: number): Promise<{ allowed: boolean; message?: string }> {
@@ -48,9 +62,9 @@ export async function POST(request: NextRequest) {
     if (contentType.includes('application/json')) {
       const data = await request.json();
 
-      // Nếu client yêu cầu Presigned URL cho client-side direct upload
+            // Nếu client yêu cầu Presigned URL cho client-side direct upload
       if (data.action === 'get_presigned_url') {
-        const { fileName, path = '', fileSize = 0 } = data;
+        const { fileName, path = '', fileSize = 0, contentType: fileContentType } = data;
         if (!fileName) {
           return NextResponse.json({ error: 'Thiếu fileName' }, { status: 400 });
         }
@@ -60,13 +74,12 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: safetyCheck.message }, { status: 403 });
         }
 
-        const cleanPath = path.replace(/^\//, '');
-        const key = `uploads/${cleanPath}${fileName}`;
+        const key = buildUploadKey(path, fileName);
 
         const putCommand = new PutObjectCommand({
           Bucket: BUCKET_NAME,
           Key: key,
-          ContentType: data.contentType || 'application/octet-stream',
+          ContentType: fileContentType || 'application/octet-stream',
         });
 
         const presignedUrl = await getSignedUrl(r2Client, putCommand, { expiresIn: 3600 });
@@ -78,7 +91,20 @@ export async function POST(request: NextRequest) {
         });
       }
 
-            // Upload text/raw content trực tiếp từ JSON (ví dụ Monaco Editor hoặc Docx Editor)
+      // Khi client upload trực tiếp xong qua Presigned URL, gọi action này để làm mới cache dung lượng
+      if (data.action === 'complete_presigned_upload') {
+        const { key, fileName, fileSize = 0 } = data;
+        invalidateStorageUsageCache();
+        return NextResponse.json({
+          success: true,
+          key: key || '',
+          url: key ? getFileUrl(key) : '',
+          name: fileName,
+          size: fileSize,
+        });
+      }
+      
+      // Upload text/raw content trực tiếp từ JSON (ví dụ Monaco Editor hoặc Docx Editor)
       if (data.content !== undefined && data.path) {
         const cleanPath = data.path.replace(/^\//, '');
         const key = cleanPath.startsWith('uploads/') ? cleanPath : `uploads/${cleanPath}`;
@@ -107,17 +133,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Trường hợp 2: FormData multipart upload (dành cho file thông thường, file zip)
+        // Trường hợp 2: FormData multipart upload (dành cho file thông thường, file zip)
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
-    let path = (formData.get('path') as string | null) || '';
+    const path = (formData.get('path') as string | null) || '';
 
     if (!file) {
       return NextResponse.json({ error: 'Không tìm thấy file để upload' }, { status: 400 });
     }
-
-        if (path.startsWith('/')) path = path.slice(1);
-    const key = `uploads/${path}${file.name}`;
+    
+    const key = buildUploadKey(path, file.name);
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 

@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
     // Vẫn kiểm tra type an toàn
     ignoreBuildErrors: false,
   },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '100mb',
+    },
+  },
 };
 
 export default nextConfig;
