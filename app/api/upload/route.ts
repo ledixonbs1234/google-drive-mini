@@ -1,50 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   r2Client,
   BUCKET_NAME,
   isR2Configured,
   getFileUrl,
-  HARD_CAP_ENABLED,
-  R2_SAFETY_LIMIT_BYTES,
-  getUsedStorageBytes,
+  verifySafetyLimit,
   invalidateStorageUsageCache,
 } from '@/lib/cloudflareR2';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Chuẩn hóa S3 Key cho file upload
+ * Chuẩn hóa S3 Key cho file upload (hỗ trợ cả relativePath khi kéo-thả nguyên thư mục)
  */
 function buildUploadKey(rawPath: string, fileName: string): string {
-  let clean = (rawPath || '').replace(/^\//, '');
+  let clean = (rawPath || '').replace(/\\/g, '/').replace(/^\//, '');
+  if (clean.includes('..')) {
+    clean = clean.split('/').filter((s) => s !== '..').join('/');
+  }
   if (clean.startsWith('uploads/')) {
     clean = clean.slice('uploads/'.length);
   }
   if (clean && !clean.endsWith('/')) {
     clean += '/';
   }
-  return `uploads/${clean}${fileName}`;
+  const safeFileName = fileName.replace(/\\/g, '/').replace(/^\/+/, '');
+  return `uploads/${clean}${safeFileName}`;
 }
 
-/**
- * Kiểm tra xem upload mới có vượt quá 10 GB miễn phí hay không
- */
-async function verifySafetyLimit(additionalBytes: number): Promise<{ allowed: boolean; message?: string }> {
-  if (!HARD_CAP_ENABLED) return { allowed: true };
-
-  const { usedBytes } = await getUsedStorageBytes();
-  if (usedBytes + additionalBytes > R2_SAFETY_LIMIT_BYTES) {
-    const usedGb = (usedBytes / (1024 * 1024 * 1024)).toFixed(2);
-    const addMb = (additionalBytes / (1024 * 1024)).toFixed(1);
-    const limitGb = (R2_SAFETY_LIMIT_BYTES / (1024 * 1024 * 1024)).toFixed(0);
-    return {
-      allowed: false,
-      message: `🚫 ĐÃ KHÓA AN TOÀN BẢO VỆ THẺ: Tải thêm file này (${addMb} MB) sẽ làm dung lượng đạt ${((usedBytes + additionalBytes) / (1024 * 1024 * 1024)).toFixed(2)} GB, vượt quá ngưỡng an toàn ${limitGb} GB miễn phí của gói Cloudflare R2. Hệ thống đã chặn tự động để bạn KHÔNG BAO GIỜ bị trừ tiền vào thẻ ngân hàng! Vui lòng xóa bớt file cũ.`,
-    };
+async function resolveNonConflictingKey(initialKey: string): Promise<string> {
+  try {
+    await r2Client.send(new HeadObjectCommand({ Bucket: BUCKET_NAME, Key: initialKey }));
+  } catch {
+    return initialKey; // Chưa tồn tại
   }
-  return { allowed: true };
+
+  const lastSlash = initialKey.lastIndexOf('/');
+  const dir = initialKey.slice(0, lastSlash + 1);
+  const name = initialKey.slice(lastSlash + 1);
+  const dotIdx = name.lastIndexOf('.');
+  const base = dotIdx > 0 ? name.slice(0, dotIdx) : name;
+  const ext = dotIdx > 0 ? name.slice(dotIdx) : '';
+
+  for (let i = 1; i < 100; i++) {
+    const candidate = `${dir}${base} (${i})${ext}`;
+    try {
+      await r2Client.send(new HeadObjectCommand({ Bucket: BUCKET_NAME, Key: candidate }));
+    } catch {
+      return candidate;
+    }
+  }
+  return `${dir}${base} (${Date.now()})${ext}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -58,13 +66,20 @@ export async function POST(request: NextRequest) {
 
     const contentType = request.headers.get('content-type') || '';
 
-    // Trường hợp 1: JSON body (dành cho Text/Code upload, Docx HTML save, hoặc xin Presigned URL)
+    // Trường hợp 1: JSON body (dành cho Text/Code upload, Tạo file mới, Docx HTML save, hoặc xin Presigned URL)
     if (contentType.includes('application/json')) {
       const data = await request.json();
 
-            // Nếu client yêu cầu Presigned URL cho client-side direct upload
+      // Nếu client yêu cầu Presigned URL cho client-side direct upload
       if (data.action === 'get_presigned_url') {
-        const { fileName, path = '', fileSize = 0, contentType: fileContentType } = data;
+        const {
+          fileName,
+          path = '',
+          fileSize = 0,
+          contentType: fileContentType,
+          conflictMode = 'overwrite', // 'overwrite' | 'rename'
+        } = data;
+
         if (!fileName) {
           return NextResponse.json({ error: 'Thiếu fileName' }, { status: 400 });
         }
@@ -74,7 +89,10 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: safetyCheck.message }, { status: 403 });
         }
 
-        const key = buildUploadKey(path, fileName);
+        let key = buildUploadKey(path, fileName);
+        if (conflictMode === 'rename') {
+          key = await resolveNonConflictingKey(key);
+        }
 
         const putCommand = new PutObjectCommand({
           Bucket: BUCKET_NAME,
@@ -103,11 +121,18 @@ export async function POST(request: NextRequest) {
           size: fileSize,
         });
       }
-      
-      // Upload text/raw content trực tiếp từ JSON (ví dụ Monaco Editor hoặc Docx Editor)
+
+      // Upload text/raw content trực tiếp từ JSON (Tạo file mới, Monaco Editor hoặc Docx Editor)
       if (data.content !== undefined && data.path) {
-        const cleanPath = data.path.replace(/^\//, '');
-        const key = cleanPath.startsWith('uploads/') ? cleanPath : `uploads/${cleanPath}`;
+        const cleanPath = String(data.path).replace(/\\/g, '/').replace(/^\//, '');
+        if (cleanPath.includes('..') || cleanPath.startsWith('_system/')) {
+          return NextResponse.json({ error: 'Đường dẫn lưu file không hợp lệ' }, { status: 400 });
+        }
+        let key = cleanPath.startsWith('uploads/') ? cleanPath : `uploads/${cleanPath}`;
+        if (data.conflictMode === 'rename') {
+          key = await resolveNonConflictingKey(key);
+        }
+
         const buffer = Buffer.from(data.content, 'utf-8');
 
         const safetyCheck = await verifySafetyLimit(buffer.length);
@@ -133,20 +158,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
-        // Trường hợp 2: FormData multipart upload (dành cho file thông thường, file zip)
+    // Trường hợp 2: FormData multipart upload (Fallback cho file thông thường)
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const path = (formData.get('path') as string | null) || '';
+    const conflictMode = (formData.get('conflictMode') as string | null) || 'overwrite';
 
     if (!file) {
       return NextResponse.json({ error: 'Không tìm thấy file để upload' }, { status: 400 });
     }
-    
-    const key = buildUploadKey(path, file.name);
+
+    let key = buildUploadKey(path, file.name);
+    if (conflictMode === 'rename') {
+      key = await resolveNonConflictingKey(key);
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Chốt chặn an toàn bảo vệ thẻ
     const safetyCheck = await verifySafetyLimit(buffer.length);
     if (!safetyCheck.allowed) {
       return NextResponse.json({ error: safetyCheck.message }, { status: 403 });
@@ -167,7 +196,7 @@ export async function POST(request: NextRequest) {
       success: true,
       key,
       url: getFileUrl(key),
-      name: file.name,
+      name: key.split('/').pop() || file.name,
       size: buffer.length,
     });
   } catch (error: any) {

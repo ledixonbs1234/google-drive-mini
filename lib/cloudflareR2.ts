@@ -10,8 +10,8 @@ export const PLAN_TYPE = (process.env.R2_PLAN_TYPE || 'paid').toLowerCase() as '
 
 // Giới hạn an toàn miễn phí của Cloudflare R2 (10 GB) để KHÔNG BAO GIỜ bị trừ tiền thẻ ngân hàng
 export const R2_SAFETY_LIMIT_BYTES = (
-  process.env.R2_SAFETY_LIMIT_GB 
-    ? parseFloat(process.env.R2_SAFETY_LIMIT_GB) 
+  process.env.R2_SAFETY_LIMIT_GB
+    ? parseFloat(process.env.R2_SAFETY_LIMIT_GB)
     : 10
 ) * 1024 * 1024 * 1024; // 10 GB
 
@@ -55,7 +55,7 @@ export async function getUsedStorageBytes(forceFresh = false): Promise<{ usedByt
 
     if (response.Contents) {
       for (const item of response.Contents) {
-        if (item.Key && !item.Key.endsWith('.keep')) {
+        if (item.Key && !item.Key.endsWith('.keep') && !item.Key.startsWith('_system/')) {
           totalObjects++;
         }
         totalUsedBytes += item.Size || 0;
@@ -75,7 +75,25 @@ export async function getUsedStorageBytes(forceFresh = false): Promise<{ usedByt
 }
 
 /**
- * Invalidate cache khi có upload/delete mới
+ * Kiểm tra xem thêm dung lượng mới có vượt quá ngưỡng an toàn 10 GB hay không
+ */
+export async function verifySafetyLimit(additionalBytes: number): Promise<{ allowed: boolean; message?: string }> {
+  if (!HARD_CAP_ENABLED) return { allowed: true };
+
+  const { usedBytes } = await getUsedStorageBytes();
+  if (usedBytes + additionalBytes > R2_SAFETY_LIMIT_BYTES) {
+    const addMb = (additionalBytes / (1024 * 1024)).toFixed(1);
+    const limitGb = (R2_SAFETY_LIMIT_BYTES / (1024 * 1024 * 1024)).toFixed(0);
+    return {
+      allowed: false,
+      message: `🚫 ĐÃ KHÓA AN TOÀN BẢO VỆ THẺ: Thao tác này cần thêm ${addMb} MB, làm dung lượng đạt ${((usedBytes + additionalBytes) / (1024 * 1024 * 1024)).toFixed(2)} GB (vượt ngưỡng miễn phí ${limitGb} GB của Cloudflare R2). Vui lòng dọn bớt Thùng rác hoặc xóa file cũ.`,
+    };
+  }
+  return { allowed: true };
+}
+
+/**
+ * Invalidate cache khi có upload/delete/copy mới
  */
 export function invalidateStorageUsageCache() {
   cachedUsage = null;
@@ -91,13 +109,36 @@ export const r2Client = new S3Client({
 });
 
 /**
+ * Mã hóa CopySource chuẩn URI cho S3/R2 (hỗ trợ đầy đủ tiếng Việt & ký tự đặc biệt)
+ */
+export function encodeR2CopySource(bucket: string, key: string): string {
+  const encodedKey = key
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return `${bucket}/${encodedKey}`;
+}
+
+/**
+ * Kiểm tra key hợp lệ (chỉ cho phép thao tác trong uploads/ hoặc _trash/, chống path traversal)
+ */
+export function isValidUserStorageKey(key: string): boolean {
+  if (!key || key.includes('..') || key.includes('\\')) return false;
+  return key.startsWith('uploads/') || key.startsWith('_trash/');
+}
+
+/**
  * Trả về URL truy cập file:
  * - Dùng Public Domain (R2 Dev URL hoặc Custom Domain) nếu đã cấu hình
  * - Hoặc route qua /api/files/download nếu là private bucket
  */
-export function getFileUrl(key: string): string {
-  if (PUBLIC_DOMAIN) {
-    return `${PUBLIC_DOMAIN}/${key}`;
+export function getFileUrl(key: string, forceDownload = false): string {
+  if (PUBLIC_DOMAIN && !forceDownload) {
+    const encodedPath = key
+      .split('/')
+      .map((seg) => encodeURIComponent(seg))
+      .join('/');
+    return `${PUBLIC_DOMAIN}/${encodedPath}`;
   }
-  return `/api/files/download?key=${encodeURIComponent(key)}`;
+  return `/api/files/download?key=${encodeURIComponent(key)}${forceDownload ? '&download=1' : ''}`;
 }

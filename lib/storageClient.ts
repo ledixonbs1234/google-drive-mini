@@ -6,6 +6,18 @@ export interface StorageItem {
   url?: string;
   size?: number;
   updated?: Date;
+  starred?: boolean;
+  trashId?: string;
+  originalPath?: string;
+  deletedAt?: Date;
+}
+
+export type BrowseMode = 'browse' | 'recent' | 'starred' | 'trash';
+
+export interface FolderOption {
+  name: string;
+  relativePath: string;
+  fullPath: string;
 }
 
 export interface StorageQuotaInfo {
@@ -22,16 +34,27 @@ export interface StorageQuotaInfo {
   isLocked?: boolean;
 }
 
+export interface ShareLinkResult {
+  shareUrl: string;
+  downloadUrl: string;
+  publicUrl: string | null;
+  expiresAt: string;
+}
+
 /**
- * Lấy danh sách files và folders hoặc tìm kiếm
+ * Lấy danh sách files/folders theo chế độ (browse, recent, starred, trash) hoặc tìm kiếm
  */
 export async function listStorageItems(
   currentPath: string = '',
-  searchTerm: string = ''
+  searchTerm: string = '',
+  mode: BrowseMode = 'browse',
+  showHidden: boolean = false
 ): Promise<{ items: StorageItem[]; configured: boolean; error?: string }> {
   const params = new URLSearchParams();
   if (currentPath) params.set('currentPath', currentPath);
   if (searchTerm) params.set('search', searchTerm);
+  if (mode !== 'browse') params.set('mode', mode);
+  if (showHidden) params.set('showHidden', 'true');
 
   const res = await fetch(`/api/files?${params.toString()}`);
   if (!res.ok) {
@@ -47,25 +70,182 @@ export async function listStorageItems(
     url: i.url,
     size: i.size,
     updated: i.updated ? new Date(i.updated) : undefined,
+    starred: Boolean(i.starred),
+    trashId: i.trashId,
+    originalPath: i.originalPath,
+    deletedAt: i.deletedAt ? new Date(i.deletedAt) : undefined,
   }));
 
   return { items, configured: Boolean(data.configured) };
 }
 
 /**
- * Xóa file hoặc thư mục
+ * Lấy toàn bộ cây thư mục để hiển thị trong hộp thoại Di chuyển / Sao chép
  */
-export async function deleteStorageItem(fullPath: string, isFolder: boolean = false): Promise<void> {
+export async function listAllStorageFolders(): Promise<FolderOption[]> {
+  const res = await fetch('/api/files?mode=folders');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.folders || [];
+}
+
+/**
+ * Xóa 1 mục (mặc định chuyển vào Thùng rác trừ khi permanent = true)
+ */
+export async function deleteStorageItem(
+  fullPath: string,
+  isFolder: boolean = false,
+  options?: { permanent?: boolean; trashId?: string }
+): Promise<void> {
   const res = await fetch('/api/files', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key: fullPath, isFolder }),
+    body: JSON.stringify({
+      key: fullPath,
+      isFolder,
+      permanent: Boolean(options?.permanent),
+      trashId: options?.trashId,
+    }),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.error || 'Lỗi khi xóa mục này');
   }
+}
+
+/**
+ * Xóa nhiều mục cùng lúc
+ */
+export async function deleteMultipleStorageItems(
+  items: Array<{ fullPath: string; isFolder: boolean; trashId?: string }>,
+  permanent: boolean = false
+): Promise<void> {
+  const res = await fetch('/api/files', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      items: items.map((i) => ({ key: i.fullPath, isFolder: i.isFolder, trashId: i.trashId })),
+      permanent,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Lỗi khi xóa các mục đã chọn');
+  }
+}
+
+/**
+ * Làm trống toàn bộ Thùng rác
+ */
+export async function emptyStorageTrash(): Promise<void> {
+  const res = await fetch('/api/files', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ emptyTrash: true }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Lỗi khi dọn sạch thùng rác');
+  }
+}
+
+/**
+ * Khôi phục các mục từ Thùng rác về vị trí gốc
+ */
+export async function restoreStorageTrashItems(trashIds: string[]): Promise<void> {
+  const res = await fetch('/api/files', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'restore', trashIds }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Lỗi khi khôi phục mục đã xóa');
+  }
+}
+
+/**
+ * Đổi tên file hoặc thư mục trực tiếp trên Cloudflare R2
+ */
+export async function renameStorageItem(
+  sourcePath: string,
+  newName: string,
+  isFolder: boolean
+): Promise<string> {
+  const res = await fetch('/api/files', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'rename', sourcePath, newName, isFolder }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Lỗi khi đổi tên');
+  }
+  return data.newPath;
+}
+
+/**
+ * Di chuyển hoặc Sao chép nhiều file/thư mục trực tiếp trên Cloudflare R2 (Server-to-Server, không tốn băng thông)
+ */
+export async function moveOrCopyStorageItems(
+  action: 'move' | 'copy',
+  items: Array<{ fullPath: string; isFolder: boolean; name: string }>,
+  targetFolderPath: string,
+  conflictResolution: 'rename' | 'overwrite' = 'rename'
+): Promise<{ processed: number; skipped: string[] }> {
+  const res = await fetch('/api/files', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, items, targetFolderPath, conflictResolution }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Lỗi khi ${action === 'move' ? 'di chuyển' : 'sao chép'} mục`);
+  }
+  return { processed: data.processed || 0, skipped: data.skipped || [] };
+}
+
+/**
+ * Bật / tắt gắn sao (Starred) cho file hoặc thư mục
+ */
+export async function toggleStarStorageItem(fullPath: string): Promise<boolean> {
+  const res = await fetch('/api/files', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'toggle_star', fullPath }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Không thể cập nhật gắn sao');
+  }
+  return Boolean(data.starred);
+}
+
+/**
+ * Tạo Link chia sẻ trực tiếp (Presigned URL có thời hạn)
+ */
+export async function createStorageShareLink(
+  key: string,
+  expiresInSeconds: number = 86400
+): Promise<ShareLinkResult> {
+  const res = await fetch('/api/files', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'share', key, expiresInSeconds }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Không thể tạo liên kết chia sẻ');
+  }
+  return data;
 }
 
 /**
@@ -84,21 +264,42 @@ export async function createStorageFolder(folderPath: string): Promise<void> {
   }
 }
 
+export interface UploadOptions {
+  signal?: AbortSignal;
+  relativePath?: string; // Ví dụ "MyFolder/sub/file.txt" khi kéo thả cả thư mục
+  conflictMode?: 'overwrite' | 'rename';
+}
+
 /**
  * Upload qua Multipart FormData (Phương án dự phòng / Fallback)
  */
 async function uploadViaMultipart(
   file: File,
-  currentPath: string,
-  onProgress?: (percent: number) => void
+  effectivePath: string,
+  onProgress?: (percent: number) => void,
+  options?: UploadOptions
 ): Promise<{ url: string; key: string }> {
   return new Promise((resolve, reject) => {
+    if (options?.signal?.aborted) {
+      reject(new Error('Đã hủy tải lên'));
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('path', currentPath);
+    formData.append('path', effectivePath);
+    if (options?.conflictMode) {
+      formData.append('conflictMode', options.conflictMode);
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload');
+
+    const onAbort = () => {
+      xhr.abort();
+      reject(new Error('Đã hủy tải lên'));
+    };
+    options?.signal?.addEventListener('abort', onAbort, { once: true });
 
     if (xhr.upload && onProgress) {
       xhr.upload.onprogress = (event) => {
@@ -110,6 +311,7 @@ async function uploadViaMultipart(
     }
 
     xhr.onload = () => {
+      options?.signal?.removeEventListener('abort', onAbort);
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const res = JSON.parse(xhr.responseText);
@@ -128,7 +330,13 @@ async function uploadViaMultipart(
     };
 
     xhr.onerror = () => {
+      options?.signal?.removeEventListener('abort', onAbort);
       reject(new Error('Lỗi kết nối mạng khi tải file lên'));
+    };
+
+    xhr.onabort = () => {
+      options?.signal?.removeEventListener('abort', onAbort);
+      reject(new Error('Đã hủy tải lên'));
     };
 
     xhr.send(formData);
@@ -137,52 +345,72 @@ async function uploadViaMultipart(
 
 /**
  * Upload một file trực tiếp lên Cloudflare R2 qua Presigned URL (Direct Upload)
- * Giúp vượt qua giới hạn 4.5MB của Serverless/Route Handler, hỗ trợ file lớn và hiển thị chính xác % tiến trình
+ * Hỗ trợ: Hủy giữa chừng (AbortSignal), Upload nguyên cấu trúc thư mục (relativePath), và Xử lý trùng tên
  */
 export async function uploadFileToR2(
   file: File,
   currentPath: string,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  options?: UploadOptions
 ): Promise<{ url: string; key: string }> {
+  // Tính đường dẫn thư mục đích nếu file nằm trong thư mục con
+  let effectivePath = currentPath || '';
+  if (effectivePath && !effectivePath.endsWith('/')) effectivePath += '/';
+
+  const rel = (options?.relativePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (rel && rel.includes('/')) {
+    const subDir = rel.slice(0, rel.lastIndexOf('/') + 1);
+    effectivePath = `${effectivePath}${subDir}`;
+  }
+
   try {
-    // Bước 1: Xin Presigned URL từ server (đồng thời kiểm tra quota 10GB an toàn)
+    if (options?.signal?.aborted) {
+      throw new Error('Đã hủy tải lên');
+    }
+
     const presignedRes = await fetch('/api/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: options?.signal,
       body: JSON.stringify({
         action: 'get_presigned_url',
         fileName: file.name,
-        path: currentPath,
+        path: effectivePath,
         fileSize: file.size,
         contentType: file.type || 'application/octet-stream',
+        conflictMode: options?.conflictMode || 'overwrite',
       }),
     });
 
-    // Nếu server từ chối (ví dụ hết dung lượng 10GB miễn phí), ném lỗi ngay
     if (!presignedRes.ok) {
       const errData = await presignedRes.json().catch(() => ({}));
-      // Nếu là lỗi 403 do vượt hạn mức dung lượng hoặc lỗi cấu hình, không fallback
       if (presignedRes.status === 403 || errData.error?.includes('KHÓA AN TOÀN')) {
         throw new Error(errData.error || 'Dung lượng đã vượt quá ngưỡng an toàn cho phép');
       }
-      // Thử fallback sang multipart nếu server không hỗ trợ presigned url
-      console.warn('Không thể tạo Presigned URL, chuyển sang cơ chế Multipart fallback:', errData.error);
-      return await uploadViaMultipart(file, currentPath, onProgress);
+      return await uploadViaMultipart(file, effectivePath, onProgress, options);
     }
 
     const { presignedUrl, key, url: publicUrl } = await presignedRes.json();
 
     if (!presignedUrl) {
-      return await uploadViaMultipart(file, currentPath, onProgress);
+      return await uploadViaMultipart(file, effectivePath, onProgress, options);
     }
 
-    // Bước 2: Tải file trực tiếp từ trình duyệt lên Cloudflare R2 bằng Presigned URL qua XMLHttpRequest
     await new Promise<void>((resolve, reject) => {
+      if (options?.signal?.aborted) {
+        reject(new Error('Đã hủy tải lên'));
+        return;
+      }
+
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', presignedUrl);
-
-      // Thiết lập Content-Type tương ứng với loại file
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+      const onAbort = () => {
+        xhr.abort();
+        reject(new Error('Đã hủy tải lên'));
+      };
+      options?.signal?.addEventListener('abort', onAbort, { once: true });
 
       if (xhr.upload && onProgress) {
         xhr.upload.onprogress = (event) => {
@@ -194,6 +422,7 @@ export async function uploadFileToR2(
       }
 
       xhr.onload = () => {
+        options?.signal?.removeEventListener('abort', onAbort);
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve();
         } else {
@@ -202,13 +431,18 @@ export async function uploadFileToR2(
       };
 
       xhr.onerror = () => {
+        options?.signal?.removeEventListener('abort', onAbort);
         reject(new Error('Lỗi kết nối mạng khi tải trực tiếp lên Cloudflare R2'));
+      };
+
+      xhr.onabort = () => {
+        options?.signal?.removeEventListener('abort', onAbort);
+        reject(new Error('Đã hủy tải lên'));
       };
 
       xhr.send(file);
     });
 
-    // Bước 3: Thông báo server làm mới cache dung lượng storage
     try {
       await fetch('/api/upload', {
         method: 'POST',
@@ -226,27 +460,28 @@ export async function uploadFileToR2(
 
     return { url: publicUrl || '', key };
   } catch (err: any) {
-    // Nếu lỗi là do vượt hạn mức quota, thông báo rõ ràng
+    if (err?.name === 'AbortError' || err?.message === 'Đã hủy tải lên') {
+      throw new Error('Đã hủy tải lên');
+    }
     if (err.message && err.message.includes('KHÓA AN TOÀN')) {
       throw err;
     }
-    // Nếu là lỗi khác và file nhỏ (< 4MB), có thể thử lại bằng multipart
     if (file.size < 4 * 1024 * 1024) {
-      console.warn('Lỗi direct upload, thử lại qua multipart:', err);
-      return await uploadViaMultipart(file, currentPath, onProgress);
+      return await uploadViaMultipart(file, effectivePath, onProgress, options);
     }
     throw err;
   }
 }
 
 /**
- * Upload nội dung text thô (Monaco Code Editor hoặc Docx HTML)
+ * Upload nội dung text thô (Tạo file mới, Monaco Code Editor hoặc Docx HTML)
  */
 export async function uploadRawContentToR2(
   content: string,
   fullPath: string,
-  contentType: string = 'text/plain; charset=utf-8'
-): Promise<void> {
+  contentType: string = 'text/plain; charset=utf-8',
+  conflictMode: 'overwrite' | 'rename' = 'overwrite'
+): Promise<{ key: string; url: string }> {
   const res = await fetch('/api/upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -254,13 +489,15 @@ export async function uploadRawContentToR2(
       content,
       path: fullPath,
       contentType,
+      conflictMode,
     }),
   });
 
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Lỗi lưu nội dung file');
+    throw new Error(data.error || 'Lỗi lưu nội dung file');
   }
+  return { key: data.key, url: data.url };
 }
 
 /**

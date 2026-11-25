@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FaBars, FaTimes, FaChevronUp, FaChevronDown } from 'react-icons/fa';
+import { FaBars, FaTimes, FaCloud } from 'react-icons/fa';
 
 interface ResponsiveLayoutProps {
   children: React.ReactNode;
@@ -18,7 +18,7 @@ export const useBreakpoint = () => {
 
   useEffect(() => {
     setIsMounted(true);
-    
+
     const updateBreakpoint = () => {
       const width = window.innerWidth;
       if (width < 768) {
@@ -32,99 +32,91 @@ export const useBreakpoint = () => {
 
     updateBreakpoint();
     window.addEventListener('resize', updateBreakpoint);
-    
+
     return () => window.removeEventListener('resize', updateBreakpoint);
   }, []);
 
-  return { breakpoint, isMobile: breakpoint === 'mobile', isTablet: breakpoint === 'tablet', isDesktop: breakpoint === 'desktop', isMounted };
+  return {
+    breakpoint,
+    isMobile: breakpoint === 'mobile',
+    isTablet: breakpoint === 'tablet',
+    isDesktop: breakpoint === 'desktop',
+    isMounted,
+  };
 };
 
 const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
   children,
   sidebar,
-  className = ''
+  className = '',
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { breakpoint, isMobile, isMounted } = useBreakpoint();
+  const { isMobile, isMounted } = useBreakpoint();
 
-  // Don't render until mounted to prevent hydration issues
   if (!isMounted) {
     return <div className={`w-full min-h-screen bg-gray-50 dark:bg-zinc-900 ${className}`}>{children}</div>;
   }
 
-  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
-
   if (isMobile) {
     return (
       <div className={`w-full min-h-screen flex flex-col bg-gray-50 dark:bg-zinc-900 ${className}`}>
-        {/* Mobile Header */}
-        <div className="flex items-center justify-between p-4 bg-white dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 relative z-50">
+        <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 sticky top-0 z-30">
           <div className="flex items-center space-x-3">
             {sidebar && (
               <button
-                onClick={toggleSidebar}
+                onClick={() => setSidebarOpen(true)}
                 className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg"
+                aria-label="Mở menu điều hướng"
               >
                 <FaBars className="w-5 h-5" />
               </button>
             )}
-            <h1 className="text-lg font-semibold text-gray-800 dark:text-white">
-              Cloudflare Drive Mini
-            </h1>
+            <div className="flex items-center gap-2 font-bold text-gray-800 dark:text-white">
+              <FaCloud className="text-orange-500 w-5 h-5" />
+              <span>Drive Mini Chung</span>
+            </div>
           </div>
         </div>
 
-        {/* Mobile Sidebar Overlay */}
         {sidebar && sidebarOpen && (
           <>
-            {/* Overlay */}
             <div
-              className="fixed inset-0 bg-black bg-opacity-50 z-40"
+              className="fixed inset-0 bg-black/50 z-40"
               onClick={() => setSidebarOpen(false)}
             />
-            
-            {/* Sidebar */}
-            <div className="fixed top-0 left-0 h-full w-80 bg-white dark:bg-zinc-800 shadow-lg z-50 transform transition-transform duration-300">
+            <div className="fixed top-0 left-0 h-full w-72 bg-white dark:bg-zinc-800 shadow-2xl z-50 overflow-y-auto">
               <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-zinc-700">
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-white">Menu</h2>
+                <span className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <FaCloud className="text-orange-500" /> Drive Mini
+                </span>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg"
+                  className="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg"
                 >
                   <FaTimes className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-4">
+              <div className="p-3" onClick={() => setSidebarOpen(false)}>
                 {sidebar}
               </div>
             </div>
           </>
         )}
 
-        {/* Main Content */}
-        <div className="flex-1 bg-gray-50 dark:bg-zinc-900">
-          {children}
-        </div>
+        <div className="flex-1 bg-gray-50 dark:bg-zinc-900">{children}</div>
       </div>
     );
   }
 
-  // Desktop/Tablet layout
   return (
-    <div className={`w-full h-screen flex bg-gray-50 dark:bg-zinc-900 ${className}`}>
-      {/* Sidebar */}
+    <div className={`w-full min-h-screen flex bg-gray-50 dark:bg-zinc-900 ${className}`}>
       {sidebar && (
-        <div className="w-64 bg-white dark:bg-zinc-800 border-r border-gray-200 dark:border-zinc-700">
-          <div className="p-4">
-            {sidebar}
-          </div>
-        </div>
+        <aside className="w-64 flex-shrink-0 bg-white dark:bg-zinc-800 border-r border-gray-200 dark:border-zinc-700 sticky top-0 h-screen overflow-y-auto">
+          <div className="p-4">{sidebar}</div>
+        </aside>
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 bg-gray-50 dark:bg-zinc-900">
-        {children}
-      </div>
+      <div className="flex-1 min-w-0 bg-gray-50 dark:bg-zinc-900">{children}</div>
     </div>
   );
 };

@@ -1,12 +1,12 @@
 // components/CodeEditorModal.tsx
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { useAppStore } from '../store/useAppStore';
-import { FaSave, FaTimes, FaSpinner } from 'react-icons/fa';
+import { FaSave, FaTimes, FaSpinner, FaCheck } from 'react-icons/fa';
 import { twMerge } from 'tailwind-merge';
 import { uploadRawContentToR2 } from '@/lib/storageClient';
 
@@ -60,12 +60,8 @@ const getLanguageFromFileName = (fileName: string): string | undefined => {
       return 'yaml';
     case 'dockerfile':
       return 'dockerfile';
-    case 'gitignore':
-    case 'txt':
-    case 'log':
-      return 'plaintext';
     default:
-      return undefined;
+      return 'plaintext';
   }
 };
 
@@ -74,11 +70,13 @@ const CodeEditorModal: React.FC = () => {
   const editingFile = useAppStore((state) => state.editingFile);
   const closeEditor = useAppStore((state) => state.closeEditorModal);
   const currentTheme = useAppStore((state) => state.theme);
+  const triggerGlobalRefresh = useAppStore((state) => state.triggerGlobalRefresh);
 
   const [fileContent, setFileContent] = useState<string>('');
   const [editedContent, setEditedContent] = useState<string>('');
   const [isLoadingContent, setIsLoadingContent] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [savedNotice, setSavedNotice] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState<string | undefined>('plaintext');
   const editorRef = useRef<any>(null);
@@ -87,22 +85,21 @@ const CodeEditorModal: React.FC = () => {
     if (isOpen && editingFile) {
       setIsLoadingContent(true);
       setError(null);
+      setSavedNotice(false);
       setFileContent('');
       setEditedContent('');
 
       const fetchContent = async () => {
         try {
-          const urlToFetch = editingFile.url;
-          const response = await fetch(urlToFetch);
+          const response = await fetch(editingFile.url, { cache: 'no-store' });
           if (!response.ok) {
-            throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
           const textContent = await response.text();
           setFileContent(textContent);
           setEditedContent(textContent);
           setLanguage(getLanguageFromFileName(editingFile.name));
         } catch (fetchError: any) {
-          console.error("Error fetching file content:", fetchError);
           setError(`Không thể tải nội dung file. Lỗi: ${fetchError.message}`);
         } finally {
           setIsLoadingContent(false);
@@ -110,37 +107,39 @@ const CodeEditorModal: React.FC = () => {
       };
 
       fetchContent();
-    } else {
-      setFileContent('');
-      setEditedContent('');
-      setError(null);
-      setIsLoadingContent(false);
-      setLanguage('plaintext');
     }
   }, [isOpen, editingFile]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!editingFile || isSaving) return;
     setIsSaving(true);
     setError(null);
 
     try {
-      // Lưu trực tiếp lên Cloudflare R2 qua API
       await uploadRawContentToR2(editedContent, editingFile.fullPath, 'text/plain; charset=utf-8');
       setFileContent(editedContent);
-      alert('Lưu file thành công lên Cloudflare R2!');
+      setSavedNotice(true);
+      triggerGlobalRefresh();
+      setTimeout(() => setSavedNotice(false), 2500);
     } catch (saveError: any) {
-      console.error("Error saving file:", saveError);
-      setError(`Lưu file thất bại. Lỗi: ${saveError.message}`);
-      alert(`Lưu file thất bại!\n${saveError.message}`);
+      setError(`Lưu thất bại: ${saveError.message}`);
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [editingFile, isSaving, editedContent, triggerGlobalRefresh]);
 
-  const handleEditorChange = (value: string | undefined) => {
-    setEditedContent(value || '');
-  };
+  // Hỗ trợ phím tắt Ctrl+S lưu nhanh
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, handleSave]);
 
   const handleEditorDidMount: OnMount = (editor) => {
     editorRef.current = editor;
@@ -150,7 +149,7 @@ const CodeEditorModal: React.FC = () => {
 
   const handleClose = () => {
     if (hasUnsavedChanges) {
-      if (window.confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn đóng?")) {
+      if (window.confirm('Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn đóng?')) {
         closeEditor();
       }
     } else {
@@ -160,85 +159,74 @@ const CodeEditorModal: React.FC = () => {
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-30" onClose={handleClose}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-300"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-200"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-75" />
-        </Transition.Child>
+      <Dialog as="div" className="relative z-50" onClose={handleClose}>
+        <div className="fixed inset-0 bg-black/60" />
 
         <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-2 text-center">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0 scale-95"
-              enterTo="opacity-100 scale-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100 scale-100"
-              leaveTo="opacity-0 scale-95"
-            >
-              <Dialog.Panel className="w-full max-w-5xl h-[85vh] transform overflow-hidden rounded-lg bg-white dark:bg-zinc-800 text-left align-middle shadow-xl transition-all flex flex-col">
-                <Dialog.Title
-                  as="h3"
-                  className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-100 px-4 py-3 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center flex-shrink-0"
-                >
-                  <span>Chỉnh sửa: {editingFile?.name ?? 'File'} {hasUnsavedChanges ? '*' : ''}</span>
-                  <div className="flex items-center space-x-2">
-                    {error && <span className="text-xs text-red-500 truncate" title={error}>{error}</span>}
-                    <button
-                      onClick={handleSave}
-                      disabled={isSaving || isLoadingContent || !hasUnsavedChanges}
-                      className={twMerge(
-                        "inline-flex items-center justify-center rounded-md border border-transparent px-3 py-1 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                        "bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-zinc-800"
-                      )}
-                    >
-                      {isSaving ? <FaSpinner className="animate-spin mr-1.5" /> : <FaSave className="mr-1.5" />}
-                      {isSaving ? 'Đang lưu...' : 'Lưu'}
-                    </button>
-                    <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 p-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
-                      <FaTimes className="w-5 h-5" />
-                    </button>
-                  </div>
-                </Dialog.Title>
-
-                <div className="flex-grow overflow-hidden relative">
-                  {isLoadingContent ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-zinc-800/50">
-                      <FaSpinner className="animate-spin h-8 w-8 text-blue-500" />
-                      <span className="ml-3 text-gray-700 dark:text-gray-300">Đang tải nội dung...</span>
-                    </div>
-                  ) : error && !fileContent ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-red-50 dark:bg-red-900/30 p-4">
-                      <p className="text-red-600 dark:text-red-300 text-center">{error}</p>
-                    </div>
-                  ) : (
-                    <Editor
-                      height="100%"
-                      language={language}
-                      theme={currentTheme === 'dark' ? 'vs-dark' : 'light'}
-                      value={editedContent}
-                      onChange={handleEditorChange}
-                      onMount={handleEditorDidMount}
-                      options={{
-                        minimap: { enabled: true },
-                        wordWrap: 'on',
-                        fontSize: 14,
-                        scrollBeyondLastLine: false,
-                        automaticLayout: true,
-                      }}
-                    />
+          <div className="flex min-h-full items-center justify-center p-2 sm:p-4">
+            <Dialog.Panel className="w-full max-w-6xl h-[88vh] transform overflow-hidden rounded-xl bg-white dark:bg-zinc-800 text-left shadow-xl flex flex-col">
+              <Dialog.Title
+                as="div"
+                className="px-4 py-3 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center flex-shrink-0"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                    {editingFile?.name ?? 'File'} {hasUnsavedChanges ? '• (Chưa lưu)' : ''}
+                  </span>
+                  {savedNotice && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      <FaCheck /> Đã lưu lên R2
+                    </span>
                   )}
                 </div>
-              </Dialog.Panel>
-            </Transition.Child>
+                <div className="flex items-center space-x-2">
+                  {error && <span className="text-xs text-red-500 max-w-xs truncate" title={error}>{error}</span>}
+                  <button
+                    onClick={handleSave}
+                    disabled={isSaving || isLoadingContent || !hasUnsavedChanges}
+                    className={twMerge(
+                      'inline-flex items-center rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed',
+                      'bg-blue-600 hover:bg-blue-700'
+                    )}
+                    title="Lưu thay đổi (Ctrl+S)"
+                  >
+                    {isSaving ? <FaSpinner className="animate-spin mr-1.5" /> : <FaSave className="mr-1.5" />}
+                    {isSaving ? 'Đang lưu...' : 'Lưu (Ctrl+S)'}
+                  </button>
+                  <button
+                    onClick={handleClose}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-lg"
+                  >
+                    <FaTimes className="w-5 h-5" />
+                  </button>
+                </div>
+              </Dialog.Title>
+
+              <div className="flex-grow overflow-hidden relative">
+                {isLoadingContent ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <FaSpinner className="animate-spin h-7 w-7 text-blue-500" />
+                    <span className="ml-3 text-sm text-gray-700 dark:text-gray-300">Đang tải nội dung...</span>
+                  </div>
+                ) : (
+                  <Editor
+                    height="100%"
+                    language={language}
+                    theme={currentTheme === 'dark' ? 'vs-dark' : 'light'}
+                    value={editedContent}
+                    onChange={(val) => setEditedContent(val || '')}
+                    onMount={handleEditorDidMount}
+                    options={{
+                      minimap: { enabled: true },
+                      wordWrap: 'on',
+                      fontSize: 14,
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                    }}
+                  />
+                )}
+              </div>
+            </Dialog.Panel>
           </div>
         </div>
       </Dialog>

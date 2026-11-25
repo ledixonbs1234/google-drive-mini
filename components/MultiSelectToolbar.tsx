@@ -1,145 +1,142 @@
 // components/MultiSelectToolbar.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { FaCheckSquare, FaSquare, FaDownload, FaTrash, FaCopy, FaCut, FaFolder, FaTimes, FaShare } from 'react-icons/fa';
+import { FaCheckSquare, FaDownload, FaTrash, FaCopy, FaCut, FaTimes, FaUndo, FaSpinner } from 'react-icons/fa';
 import { twMerge } from 'tailwind-merge';
-
-interface SelectedItem {
-  name: string;
-  fullPath: string;
-  isFolder: boolean;
-  url?: string;
-  size?: number;
-  updated?: Date;
-}
+import { StorageItem, BrowseMode } from '@/lib/storageClient';
 
 interface MultiSelectToolbarProps {
-  selectedItems: SelectedItem[];
+  selectedItems: StorageItem[];
+  browseMode?: BrowseMode;
+  isZipping?: boolean;
   onClearSelection: () => void;
-  onDownload: (items: SelectedItem[]) => void;
-  onDelete: (items: SelectedItem[]) => void;
-  onMove: (items: SelectedItem[]) => void;
-  onCopy: (items: SelectedItem[]) => void;
+  onDownload: (items: StorageItem[]) => void;
+  onDelete: (items: StorageItem[]) => void;
+  onMove: (items: StorageItem[]) => void;
+  onCopy: (items: StorageItem[]) => void;
+  onRestore?: (items: StorageItem[]) => void;
   className?: string;
 }
 
 const MultiSelectToolbar: React.FC<MultiSelectToolbarProps> = ({
   selectedItems,
+  browseMode = 'browse',
+  isZipping = false,
   onClearSelection,
   onDownload,
   onDelete,
   onMove,
   onCopy,
-  className = ''
+  onRestore,
+  className = '',
 }) => {
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    setIsVisible(selectedItems.length > 0);
-  }, [selectedItems]);
-
-  if (!isVisible) return null;
+  if (selectedItems.length === 0) return null;
 
   const selectedCount = selectedItems.length;
-  const hasFiles = selectedItems.some(item => !item.isFolder);
-  const hasFolders = selectedItems.some(item => item.isFolder);
+  const filesOnly = selectedItems.filter((item) => !item.isFolder);
+  const hasFiles = filesOnly.length > 0;
 
-  const totalSize = selectedItems
-    .filter(item => !item.isFolder && item.size)
-    .reduce((sum, item) => sum + (item.size || 0), 0);
+  const totalSize = filesOnly.reduce((sum, item) => sum + (item.size || 0), 0);
 
   const formatSize = (bytes: number) => {
+    if (bytes === 0) return '';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
   return (
-    <div className={twMerge(
-      'fixed bottom-0 left-0 right-0 bg-white dark:bg-zinc-800 border-t border-gray-200 dark:border-zinc-700 shadow-lg z-50',
-      'transform transition-transform duration-300 ease-in-out',
-      isVisible ? 'translate-y-0' : 'translate-y-full',
-      className
-    )}>
-      <div className="max-w-7xl mx-auto px-4 py-3">
-        <div className="flex items-center justify-between">
-          {/* Selection Info */}
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <FaCheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                {selectedCount} mục đã chọn
-              </span>
-            </div>
-            
-            {totalSize > 0 && (
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                {formatSize(totalSize)}
-              </div>
-            )}
-            
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              {hasFolders && hasFiles ? 'Thư mục & Tệp tin' : 
-               hasFolders ? 'Thư mục' : 'Tệp tin'}
-            </div>
-          </div>
-
-          {/* Actions */}
+    <div
+      className={twMerge(
+        'fixed bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-4xl bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-2xl shadow-2xl z-40 px-4 py-3',
+        className
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2">
-            {/* Download - only for files */}
-            {hasFiles && (
-              <button
-                onClick={() => onDownload(selectedItems.filter(item => !item.isFolder))}
-                className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
-                title="Tải xuống các tệp tin đã chọn"
-              >
-                <FaDownload className="w-4 h-4" />
-                <span className="hidden sm:inline">Tải xuống</span>
-              </button>
-            )}
-
-            {/* Copy */}
-            <button
-              onClick={() => onCopy(selectedItems)}
-              className="flex items-center space-x-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition-colors"
-              title="Sao chép"
-            >
-              <FaCopy className="w-4 h-4" />
-              <span className="hidden sm:inline">Sao chép</span>
-            </button>
-
-            {/* Move */}
-            <button
-              onClick={() => onMove(selectedItems)}
-              className="flex items-center space-x-2 px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md text-sm font-medium transition-colors"
-              title="Di chuyển"
-            >
-              <FaCut className="w-4 h-4" />
-              <span className="hidden sm:inline">Di chuyển</span>
-            </button>
-
-            {/* Delete */}
-            <button
-              onClick={() => onDelete(selectedItems)}
-              className="flex items-center space-x-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors"
-              title="Xóa"
-            >
-              <FaTrash className="w-4 h-4" />
-              <span className="hidden sm:inline">Xóa</span>
-            </button>
-
-            {/* Clear Selection */}
-            <button
-              onClick={onClearSelection}
-              className="flex items-center space-x-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-sm font-medium transition-colors"
-              title="Hủy chọn"
-            >
-              <FaTimes className="w-4 h-4" />
-              <span className="hidden sm:inline">Hủy</span>
-            </button>
+            <FaCheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              Đã chọn {selectedCount} mục
+            </span>
           </div>
+
+          {totalSize > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-gray-300">
+              {formatSize(totalSize)}
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {browseMode === 'trash' ? (
+            <>
+              <button
+                onClick={() => onRestore?.(selectedItems)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition-colors"
+              >
+                <FaUndo className="w-3.5 h-3.5" />
+                <span>Khôi phục ({selectedCount})</span>
+              </button>
+              <button
+                onClick={() => onDelete(selectedItems)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium transition-colors"
+              >
+                <FaTrash className="w-3.5 h-3.5" />
+                <span>Xóa vĩnh viễn</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {hasFiles && (
+                <button
+                  onClick={() => onDownload(filesOnly)}
+                  disabled={isZipping}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
+                  title="Tải xuống (tự động đóng gói .ZIP nếu chọn nhiều tệp)"
+                >
+                  {isZipping ? <FaSpinner className="w-3.5 h-3.5 animate-spin" /> : <FaDownload className="w-3.5 h-3.5" />}
+                  <span>
+                    {isZipping ? 'Đang nén ZIP...' : filesOnly.length > 1 ? `Tải ZIP (${filesOnly.length})` : 'Tải xuống'}
+                  </span>
+                </button>
+              )}
+
+              <button
+                onClick={() => onCopy(selectedItems)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition-colors"
+              >
+                <FaCopy className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sao chép</span>
+              </button>
+
+              <button
+                onClick={() => onMove(selectedItems)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-medium transition-colors"
+              >
+                <FaCut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Di chuyển</span>
+              </button>
+
+              <button
+                onClick={() => onDelete(selectedItems)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium transition-colors"
+              >
+                <FaTrash className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Xóa</span>
+              </button>
+            </>
+          )}
+
+          <button
+            onClick={onClearSelection}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-200 dark:bg-zinc-700 hover:bg-gray-300 dark:hover:bg-zinc-600 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-medium transition-colors"
+            title="Bỏ chọn tất cả (Esc)"
+          >
+            <FaTimes className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Bỏ chọn</span>
+          </button>
         </div>
       </div>
     </div>

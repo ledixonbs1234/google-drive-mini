@@ -41,6 +41,8 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({ currentPath, onFo
 
     try {
       await createStorageFolder(targetPath);
+      const cleanFolder = targetPath.startsWith('uploads/') ? targetPath : `uploads/${targetPath}`;
+      useAppStore.getState().markUploadedKeys([cleanFolder]);
       onFolderCreated();
       closeModalAndReset();
     } catch (err: any) {

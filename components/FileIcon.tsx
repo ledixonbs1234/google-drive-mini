@@ -1,127 +1,139 @@
 // components/FileIcon.tsx
 import { IconType } from 'react-icons';
 import {
-  FaFile, FaFileImage, FaFilePdf, FaFileWord, FaFileExcel, FaFilePowerpoint,
-  FaFileAudio, FaFileVideo, FaFileZipper, FaFolder, FaFileCode, FaDatabase,
-  FaFont, FaCompactDisc, FaGear, FaVectorSquare, FaFileLines, FaAppStoreIos, // <-- Thêm icon mới
-  FaWindows, FaLinux, FaApple, FaAndroid, FaJava, FaPython, FaSquare, FaHtml5, FaCss3Alt, FaMarkdown, FaDocker, FaGitAlt
+  FaFile,
+  FaFileImage,
+  FaFilePdf,
+  FaFileWord,
+  FaFileExcel,
+  FaFilePowerpoint,
+  FaFileAudio,
+  FaFileVideo,
+  FaFileZipper,
+  FaFolder,
+  FaFileCode,
+  FaDatabase,
+  FaFont,
+  FaCompactDisc,
+  FaGear,
+  FaVectorSquare,
+  FaFileLines,
+  FaFileCsv,
+  FaWindows,
+  FaLinux,
+  FaApple,
+  FaAndroid,
+  FaJava,
+  FaPython,
+  FaHtml5,
+  FaCss3Alt,
+  FaDocker,
+  FaGitAlt,
 } from 'react-icons/fa6';
+
 interface FileIconProps {
   fileName: string;
   isFolder?: boolean;
   className?: string;
 }
 
-const FileIcon: React.FC<FileIconProps> = ({ fileName, isFolder = false, className = "w-6 h-6" }) => {
+const FileIcon: React.FC<FileIconProps> = ({ fileName, isFolder = false, className = 'w-6 h-6' }) => {
   if (isFolder) {
-    return <FaFolder className={`text-yellow-500 ${className}`} />;
+    return <FaFolder className={`text-amber-400 ${className}`} />;
   }
+
+  const lower = fileName.toLowerCase();
+  if (lower === 'dockerfile' || lower.endsWith('.dockerfile')) {
+    return <FaDocker className={`text-sky-500 ${className}`} />;
+  }
+  if (lower === '.gitignore') {
+    return <FaGitAlt className={`text-orange-600 ${className}`} />;
+  }
+
   const lastDotIndex = fileName.lastIndexOf('.');
-  if (lastDotIndex === -1 || lastDotIndex === 0 || lastDotIndex === fileName.length - 1) {
-    // Nếu không có dấu chấm, hoặc dấu chấm ở đầu, hoặc dấu chấm ở cuối -> dùng icon file mặc định
-    return <FaFile className={`text-gray-500 dark:text-gray-400 ${className}`} />;
+  if (lastDotIndex === -1 || lastDotIndex === fileName.length - 1) {
+    return <FaFile className={`text-gray-400 dark:text-gray-500 ${className}`} />;
   }
-  const extension = fileName.slice(lastDotIndex + 1).toLowerCase();
 
-  let IconComponent: IconType = FaFile; // Icon mặc định
+  const ext = fileName.slice(lastDotIndex + 1).toLowerCase();
+  let IconComponent: IconType = FaFile;
+  let colorClass = 'text-gray-500 dark:text-gray-400';
 
-  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tif', 'tiff'].includes(extension)) {
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tif', 'tiff', 'psd'].includes(ext)) {
     IconComponent = FaFileImage;
-  } else if (extension === 'ai' || extension === 'eps') { // Adobe Illustrator / Vector
+    colorClass = 'text-sky-500';
+  } else if (['ai', 'eps'].includes(ext)) {
     IconComponent = FaVectorSquare;
-  } else if (extension === 'psd') { // Adobe Photoshop
-    // Có thể dùng FaImage hoặc một icon design khác nếu muốn phân biệt rõ hơn
-    IconComponent = FaFileImage; // Giữ FaFileImage cho đơn giản, hoặc đổi thành FaPaintBrush, FaPalette...
-  } else if (extension === 'pdf') {
+    colorClass = 'text-orange-500';
+  } else if (ext === 'pdf') {
     IconComponent = FaFilePdf;
-  } else if (['doc', 'docx'].includes(extension)) {
+    colorClass = 'text-red-500';
+  } else if (['doc', 'docx'].includes(ext)) {
     IconComponent = FaFileWord;
-  } else if (['xls', 'xlsx'].includes(extension)) {
+    colorClass = 'text-blue-600';
+  } else if (ext === 'csv' || ext === 'tsv') {
+    IconComponent = FaFileCsv;
+    colorClass = 'text-emerald-600';
+  } else if (['xls', 'xlsx'].includes(ext)) {
     IconComponent = FaFileExcel;
-  } else if (['ppt', 'pptx'].includes(extension)) {
+    colorClass = 'text-emerald-600';
+  } else if (['ppt', 'pptx'].includes(ext)) {
     IconComponent = FaFilePowerpoint;
-  } else if (extension === 'txt' || extension === 'md') { // Text và Markdown
-    IconComponent = FaFileLines; // Hoặc dùng FaMarkdown nếu muốn icon riêng
-  } else if (['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'wma'].includes(extension)) {
+    colorClass = 'text-orange-500';
+  } else if (['txt', 'md', 'markdown', 'log'].includes(ext)) {
+    IconComponent = FaFileLines;
+    colorClass = 'text-slate-500 dark:text-slate-300';
+  } else if (['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'wma'].includes(ext)) {
     IconComponent = FaFileAudio;
-  } else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'mpg', 'mpeg'].includes(extension)) {
+    colorClass = 'text-emerald-500';
+  } else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'mpg', 'mpeg', '3gp'].includes(ext)) {
     IconComponent = FaFileVideo;
-  } else if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(extension)) {
+    colorClass = 'text-rose-500';
+  } else if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(ext)) {
     IconComponent = FaFileZipper;
-  }
-  // 5. Font chữ
-  else if (['ttf', 'otf', 'woff', 'woff2', 'eot'].includes(extension)) {
-    IconComponent = FaFont;
-  } else if (['js', 'jsx', 'ts', 'tsx', 'html', 'css', 'json', 'py', 'java', 'c', 'cpp', 'cs', 'go', 'php', 'rb'].includes(extension)) {
+    colorClass = 'text-amber-600';
+  } else if (['py', 'pyc'].includes(ext)) {
+    IconComponent = FaPython;
+    colorClass = 'text-yellow-500';
+  } else if (['java', 'jar'].includes(ext)) {
+    IconComponent = FaJava;
+    colorClass = 'text-red-600';
+  } else if (['html', 'htm'].includes(ext)) {
+    IconComponent = FaHtml5;
+    colorClass = 'text-orange-600';
+  } else if (['css', 'scss', 'sass', 'less'].includes(ext)) {
+    IconComponent = FaCss3Alt;
+    colorClass = 'text-blue-500';
+  } else if (['js', 'jsx', 'mjs', 'ts', 'tsx', 'json', 'xml', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'php', 'rb', 'rs', 'kt'].includes(ext)) {
     IconComponent = FaFileCode;
-  } else if (['sql', 'db', 'sqlite', 'mdb', 'accdb'].includes(extension)) {
+    colorClass = 'text-indigo-500';
+  } else if (['sql', 'db', 'sqlite', 'mdb', 'accdb'].includes(ext)) {
     IconComponent = FaDatabase;
-  }
-  // 7. Disk Images & Máy ảo
-  else if (['iso', 'img', 'vhd', 'vmdk', 'vdi', 'ova', 'dmg'].includes(extension)) {
-    IconComponent = FaCompactDisc; // Dùng icon CD/DVD ẩn dụ cho disk image
-    if (extension === 'dmg' || extension === 'app') IconComponent = FaApple; // Cụ thể hơn cho macOS
-  }// 8. File thực thi & Cài đặt (Executable & Setup)
-  else if (extension === 'exe' || extension === 'msi' || extension === 'msu') { // Windows
+    colorClass = 'text-cyan-600';
+  } else if (['ttf', 'otf', 'woff', 'woff2', 'eot'].includes(ext)) {
+    IconComponent = FaFont;
+    colorClass = 'text-purple-500';
+  } else if (['iso', 'img', 'vhd', 'vmdk', 'vdi', 'ova'].includes(ext)) {
+    IconComponent = FaCompactDisc;
+    colorClass = 'text-zinc-500';
+  } else if (['exe', 'msi', 'msu', 'bat', 'cmd', 'ps1'].includes(ext)) {
     IconComponent = FaWindows;
-  } else if (extension === 'apk') { // Android Package
-    IconComponent = FaAndroid; // Hoặc dùng FaAppStoreIos nếu muốn chung chung hơn
-  } else if (extension === 'jar') { // Java Archive
-    IconComponent = FaJava; // Cần import FaJava từ react-icons/fa6 hoặc fa
-  } else if (extension === 'deb' || extension === 'rpm' || extension === 'sh' || extension === 'run') { // Linux
+    colorClass = 'text-blue-500';
+  } else if (ext === 'apk') {
+    IconComponent = FaAndroid;
+    colorClass = 'text-green-500';
+  } else if (['deb', 'rpm', 'sh', 'bash', 'run'].includes(ext)) {
     IconComponent = FaLinux;
-  } else if (extension === 'app' || extension === 'pkg') { // macOS (app đã có ở trên)
+    colorClass = 'text-amber-600';
+  } else if (['dmg', 'app', 'pkg', 'ipa', 'swift'].includes(ext)) {
     IconComponent = FaApple;
-  } else if (extension === 'ipa') { // iOS Package
-    IconComponent = FaAppStoreIos; // Hoặc FaApple
+    colorClass = 'text-zinc-700 dark:text-zinc-200';
+  } else if (['ini', 'cfg', 'conf', 'yml', 'yaml', 'toml', 'env'].includes(ext)) {
+    IconComponent = FaGear;
+    colorClass = 'text-gray-500';
   }
- // 9. Code & Script & Config
- else if (extension === 'js' || extension === 'jsx' || extension === 'mjs' ) { // Javascript
-     IconComponent = FaSquare; // Cần import FaJsSquare từ react-icons/fa6 hoặc fa
- } else if (extension === 'ts' || extension === 'tsx') { // Typescript
-     IconComponent = FaFileCode; // Chưa có icon TS riêng biệt phổ biến trong Fa6, dùng code chung
- } else if (extension === 'py' || extension === 'pyc') { // Python
-     IconComponent = FaPython; // Cần import FaPython từ react-icons/fa6 hoặc fa
- } else if (extension === 'java') { // Java source
-     IconComponent = FaJava;
- } else if (extension === 'html' || extension === 'htm') { // HTML
-     IconComponent = FaHtml5; // Cần import FaHtml5 từ react-icons/fa6 hoặc fa
- } else if (extension === 'css' || extension === 'scss' || extension === 'sass' || extension === 'less') { // CSS
-     IconComponent = FaCss3Alt; // Cần import FaCss3Alt từ react-icons/fa6 hoặc fa
- } else if (extension === 'json') { // JSON
-     IconComponent = FaFileCode; // Dùng code chung
- } else if (extension === 'xml') { // XML
-     IconComponent = FaFileCode; // Dùng code chung
- } else if (['c', 'cpp', 'h', 'hpp'].includes(extension)) { // C/C++
-     IconComponent = FaFileCode; // Dùng code chung
- } else if (extension === 'cs') { // C#
-     IconComponent = FaFileCode; // Dùng code chung
- } else if (['rb', 'ruby'].includes(extension)) { // Ruby
-     IconComponent = FaFileCode; // Dùng code chung
- } else if (['php'].includes(extension)) { // PHP
-     IconComponent = FaFileCode; // Dùng code chung
- } else if (extension === 'swift') { // Swift
-     IconComponent = FaApple; // Liên quan đến Apple
- } else if (extension === 'kt' || extension === 'kts') { // Kotlin
-     IconComponent = FaFileCode; // Dùng code chung, liên quan Android/Java
- } else if (['sh', 'bash', 'zsh'].includes(extension)) { // Shell script (đã có FaLinux ở trên, nhưng có thể để đây)
-     IconComponent = FaFileCode;
- } else if (extension === 'ps1') { // Powershell
-     IconComponent = FaWindows; // Liên quan đến Windows
- } else if (['bat', 'cmd'].includes(extension)) { // Windows Batch
-     IconComponent = FaWindows;
- } else if (['ini', 'cfg', 'conf', 'yml', 'yaml', 'toml', 'env'].includes(extension)) { // Config files
-     IconComponent = FaGear;
- } else if (extension === 'log') { // Log files
-     IconComponent = FaFileLines;
- } else if (extension === 'gitignore') { // Git ignore
-     IconComponent = FaGitAlt; // Cần import FaGitAlt từ react-icons/fa6 hoặc fa
- } else if (extension === 'dockerfile' || extension === 'dockerignore') { // Docker
-     IconComponent = FaDocker; // Cần import FaDocker từ react-icons/fa6 hoặc fa
- }
 
-
-  return <IconComponent className={`text-gray-500 dark:text-gray-400 ${className}`} />;
+  return <IconComponent className={`${colorClass} ${className}`} />;
 };
 
 export default FileIcon;
